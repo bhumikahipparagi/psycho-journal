@@ -23,4 +23,4 @@ A soft, dark, pastel journaling app that works on **macOS, iPad, and iPhone** as
 
 ## Notes
 - Live transcription uses the browser's Speech Recognition (works in Safari 14.5+ and Chrome). If unavailable, the voice note is still saved — only the live transcript is skipped.
-- **Cross-device sync (optional):** tap ⚙ in the app, set it up once with a GitHub fine-grained token (access to only your private `psycho-data` repo, permission: Contents read & write), then use "Copy link for my other devices" — opening that link on any device turns sync on there instantly. Entries (including audio) sync automatically after every save and on every launch. Deleting an entry removes it from that device only; the cloud archive keeps everything.
+- **Cross-device sync:** on each device, open the app and type the sync passphrase once — that's the entire setup. Entries (including audio) sync through the owner's private `psycho-data` repo automatically after every save and on every launch. Deleting an entry removes it from that device only; the cloud archive keeps everything.

@@ -283,12 +283,11 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
   </div>
   <section class="settings" id="settingsPanel" hidden>
     <h3>Sync across devices</h3>
-    <p class="settings-hint">Entries sync through your own private repo <strong>psycho-data</strong> — no third party ever sees your journal. Set it up once: paste a GitHub token (fine-grained, access to only <strong>psycho-data</strong>, permission: Contents read &amp; write). Then use “Copy link for my other devices” — opening that link on another device turns sync on there instantly. Keep the link private; it carries your key.</p>
-    <input type="password" id="ghToken" placeholder="github_pat_…" autocomplete="off">
+    <p class="settings-hint">Entries sync through your own private repo <strong>psycho-data</strong> — no third party ever sees your journal. Type your passphrase once on this device and sync turns on.</p>
+    <input type="password" id="ghToken" placeholder="Your passphrase" autocomplete="off">
     <div class="settings-actions">
-      <button class="tool-btn" id="ghSave">Turn on sync</button>
-      <button class="tool-btn" id="ghShare">Copy link for my other devices</button>
-      <button class="tool-btn" id="ghForget">Forget token</button>
+      <button class="tool-btn" id="ghSave">Unlock sync</button>
+      <button class="tool-btn" id="ghForget">Turn off sync on this device</button>
     </div>
     <p class="settings-hint" id="ghStatus" style="margin:10px 0 0"></p>
   </section>
@@ -603,6 +602,16 @@ $('importFile').addEventListener('change',async e=>{
 
 /* ============ sync — private GitHub repo ============ */
 const SYNC_REPO='bhumikahipparagi/psycho-data';
+const SYNC_BLOB={"salt": "w6K27S+JiXsWkq6kVwpaCg==", "iv": "vQkY9++pzj6CsY1A", "ct": "U/SK1uhtrf0DsHVzA6VPmVkHKd+d9E/u/f/Mq9RJSCSRumIJihmUOXb262YtFgLpC6jnPmgnBkQ=", "iter": 600000};
+async function unlockSync(pass){
+  const b=x=>Uint8Array.from(atob(x),c=>c.charCodeAt(0));
+  const km=await crypto.subtle.importKey('raw',_enc.encode(pass),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey(
+    {name:'PBKDF2',salt:b(SYNC_BLOB.salt),iterations:SYNC_BLOB.iter,hash:'SHA-256'},
+    km,{name:'AES-GCM',length:256},false,['decrypt']);
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b(SYNC_BLOB.iv)},key,b(SYNC_BLOB.ct));
+  return new TextDecoder().decode(pt);
+}
 let syncBusy=false;
 const _enc=new TextEncoder();
 function b64encode(str){
@@ -680,19 +689,19 @@ $('settingsBtn').addEventListener('click',async()=>{
   $('ghStatus').textContent=cfg?'Sync is on for this device ✓':'No token on this device yet.';
 });
 $('ghSave').addEventListener('click',async()=>{
-  const t=$('ghToken').value.trim();
-  if(!t){toast('Paste a token first');return}
-  await saveDraft('gh',{token:t});
-  $('ghToken').value='';
-  $('ghStatus').textContent='Sync is on for this device ✓';
-  syncNow(false);
-});
-$('ghShare').addEventListener('click',async()=>{
-  const cfg=await loadDraftKey('gh');
-  if(!cfg){toast('Turn on sync first');return}
-  const link=location.origin+location.pathname+'#sync='+encodeURIComponent(cfg.token);
-  try{await navigator.clipboard.writeText(link);toast('Copied — open it once on each device')}
-  catch(_){prompt('Copy this link and open it on your other devices:',link)}
+  const p=$('ghToken').value;
+  if(!p){toast('Type your passphrase');return}
+  $('ghSave').textContent='Unlocking…';
+  try{
+    const token=await unlockSync(p);
+    await saveDraft('gh',{token:token});
+    $('ghToken').value='';
+    $('ghStatus').textContent='Sync is on for this device ✓';
+    $('settingsPanel').hidden=true;
+    toast('Sync unlocked ♡');
+    syncNow(true);
+  }catch(_){toast('That passphrase doesn\u2019t match')}
+  $('ghSave').textContent='Unlock sync';
 });
 $('ghForget').addEventListener('click',async()=>{
   await clearDraft('gh');
@@ -703,14 +712,12 @@ $('ghForget').addEventListener('click',async()=>{
 /* ============ boot ============ */
 (async()=>{
   db=await openDB();
-  if(location.hash.indexOf('#sync=')===0){
-    const t=decodeURIComponent(location.hash.slice(6));
-    if(t){
-      await saveDraft('gh',{token:t});
-      history.replaceState(null,'',location.pathname+location.search);
-      toast('Sync linked to this device ♡');
+  loadDraftKey('gh').then(cfg=>{
+    if(!cfg){
+      $('settingsPanel').hidden=false;
+      $('ghStatus').textContent='Type your passphrase to turn on sync ♡';
     }
-  }
+  });
   // ask the browser to never evict this data
   if(navigator.storage&&navigator.storage.persist){
     navigator.storage.persist();
