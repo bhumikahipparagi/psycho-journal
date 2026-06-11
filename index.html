@@ -198,6 +198,13 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
 }
 .empty .sparkle{font-family:'Fraunces',serif;font-style:italic;font-size:1.2rem;color:var(--lavender);display:block;margin-bottom:6px}
 
+.settings{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:18px}
+.settings h3{font-family:'Fraunces',serif;font-weight:400;font-size:1.05rem;margin-bottom:8px}
+.settings-hint{font-size:.82rem;color:var(--ink-dim);margin-bottom:10px;line-height:1.5}
+.settings input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 12px;font-family:'DM Mono',monospace;font-size:.85rem;margin-bottom:10px;outline:none}
+.settings input:focus{border-color:var(--lavender)}
+.settings-actions{display:flex;gap:8px}
+
 .toast{
   position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);
   background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
@@ -267,11 +274,23 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
   <div class="feed-head">
     <h2>Your pages</h2>
     <div class="backup-row">
+      <button class="mini-btn" id="syncBtn">Sync ⟳</button>
       <button class="mini-btn" id="exportBtn">Backup ↓</button>
       <button class="mini-btn" id="importBtn">Restore ↑</button>
+      <button class="mini-btn" id="settingsBtn" aria-label="Sync settings">⚙</button>
       <input type="file" id="importFile" accept=".json" hidden>
     </div>
   </div>
+  <section class="settings" id="settingsPanel" hidden>
+    <h3>Sync across devices</h3>
+    <p class="settings-hint">Entries sync through your own private repo <strong>psycho-data</strong> — no third party ever sees your journal. Paste a GitHub token (fine-grained, access to only <strong>psycho-data</strong>, permission: Contents read &amp; write) once on each device.</p>
+    <input type="password" id="ghToken" placeholder="github_pat_…" autocomplete="off">
+    <div class="settings-actions">
+      <button class="tool-btn" id="ghSave">Turn on sync</button>
+      <button class="tool-btn" id="ghForget">Forget token</button>
+    </div>
+    <p class="settings-hint" id="ghStatus" style="margin:10px 0 0"></p>
+  </section>
   <div id="feed"></div>
 </div>
 
@@ -483,7 +502,7 @@ $('saveBtn').addEventListener('click',async()=>{
     $('recTime').textContent='';
   }
   toast('Saved ♡');
-  render();
+  render();maybeSync();
 });
 $('discardBtn').addEventListener('click',()=>{
   if(!confirm('Discard this draft? It will be gone for good.'))return;
@@ -518,7 +537,12 @@ async function render(){
     meta.innerHTML='<span class="entry-time">'+fmt(e.created)+'</span>';
     const del=document.createElement('button');del.className='entry-del';del.textContent='remove';
     del.addEventListener('click',async()=>{
-      if(confirm('Remove this entry? This can\u2019t be undone.')){await delEntry(e.id);render()}
+      if(confirm('Remove this entry? This can\u2019t be undone.')){
+        await delEntry(e.id);
+        const tomb=(await loadDraftKey('tombstones'))||[];
+        if(!tomb.includes(e.id)){tomb.push(e.id);await saveDraft('tombstones',tomb)}
+        render();maybeSync();
+      }
     });
     meta.appendChild(del);card.appendChild(meta);
     if(e.type==='write'){
@@ -576,6 +600,107 @@ $('importFile').addEventListener('change',async e=>{
   e.target.value='';
 });
 
+/* ============ sync — private GitHub repo ============ */
+const SYNC_REPO='bhumikahipparagi/psycho-data';
+let syncBusy=false;
+const _enc=new TextEncoder();
+function b64encode(str){
+  const bytes=_enc.encode(str);let bin='';const CH=0x8000;
+  for(let i=0;i<bytes.length;i+=CH)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+CH));
+  return btoa(bin);
+}
+async function ghFetch(path,opts,raw){
+  const cfg=await loadDraftKey('gh');
+  if(!cfg||!cfg.token)throw new Error('notoken');
+  return fetch('https://api.github.com/repos/'+SYNC_REPO+path,Object.assign({},opts,{
+    headers:Object.assign({
+      'Authorization':'Bearer '+cfg.token,
+      'Accept':raw?'application/vnd.github.raw+json':'application/vnd.github+json'
+    },(opts&&opts.headers)||{})
+  }));
+}
+async function entryToJSON(e){
+  const c={id:e.id,type:e.type,created:e.created,text:e.text||''};
+  if(e.image)c.image=await blobToB64(e.image);
+  if(e.audio)c.audio=await blobToB64(e.audio);
+  return JSON.stringify(c);
+}
+async function jsonToEntry(j){
+  const e=Object.assign({},j);
+  if(typeof e.image==='string')e.image=await b64ToBlob(e.image);
+  if(typeof e.audio==='string')e.audio=await b64ToBlob(e.audio);
+  return e;
+}
+async function syncNow(silent){
+  if(syncBusy)return;syncBusy=true;
+  const btn=$('syncBtn');btn.textContent='Syncing…';
+  try{
+    const tomb=new Set((await loadDraftKey('tombstones'))||[]);
+    let remote=[];
+    const listRes=await ghFetch('/contents/entries');
+    if(listRes.status===200)remote=await listRes.json();
+    else if(listRes.status!==404)throw new Error('list '+listRes.status);
+    const remoteMap=new Map(remote.map(f=>[f.name.replace('.json',''),f]));
+    const local=await allEntries();
+    const localIds=new Set(local.map(e=>e.id));
+    for(const e of local){
+      if(remoteMap.has(e.id))continue;
+      const body=await entryToJSON(e);
+      const r=await ghFetch('/contents/entries/'+e.id+'.json',{
+        method:'PUT',
+        body:JSON.stringify({message:'add '+e.id,content:b64encode(body)})
+      });
+      if(!r.ok)throw new Error('push '+r.status);
+    }
+    for(const pair of remoteMap){
+      const id=pair[0],f=pair[1];
+      if(tomb.has(id)){
+        await ghFetch('/contents/entries/'+id+'.json',{
+          method:'DELETE',
+          body:JSON.stringify({message:'remove '+id,sha:f.sha})
+        });
+      }
+    }
+    for(const pair of remoteMap){
+      const id=pair[0];
+      if(localIds.has(id)||tomb.has(id))continue;
+      const r=await ghFetch('/contents/entries/'+id+'.json',null,true);
+      if(!r.ok)continue;
+      const e=await jsonToEntry(await r.json());
+      await putEntry(e);
+    }
+    btn.textContent='Sync ⟳';
+    if(!silent)toast('Synced ✓');
+    render();
+  }catch(err){
+    btn.textContent='Sync ⟳';
+    if(err&&err.message==='notoken'){
+      if(!silent){$('settingsPanel').hidden=false;toast('Set up sync first ⚙')}
+    }else if(!silent)toast('Sync failed — check token & connection');
+  }finally{syncBusy=false}
+}
+async function maybeSync(){try{if(await loadDraftKey('gh'))syncNow(true)}catch(_){}}
+
+$('syncBtn').addEventListener('click',()=>syncNow(false));
+$('settingsBtn').addEventListener('click',async()=>{
+  const p=$('settingsPanel');p.hidden=!p.hidden;
+  const cfg=await loadDraftKey('gh');
+  $('ghStatus').textContent=cfg?'Sync is on for this device ✓':'No token on this device yet.';
+});
+$('ghSave').addEventListener('click',async()=>{
+  const t=$('ghToken').value.trim();
+  if(!t){toast('Paste a token first');return}
+  await saveDraft('gh',{token:t});
+  $('ghToken').value='';
+  $('ghStatus').textContent='Sync is on for this device ✓';
+  syncNow(false);
+});
+$('ghForget').addEventListener('click',async()=>{
+  await clearDraft('gh');
+  $('ghStatus').textContent='No token on this device yet.';
+  toast('Token removed');
+});
+
 /* ============ boot ============ */
 (async()=>{
   db=await openDB();
@@ -599,6 +724,7 @@ $('importFile').addEventListener('change',async e=>{
     $('speakHint').textContent='Found an unsaved recording from last time \u2661 press Save entry to keep it.';
   }
   render();
+  maybeSync();
 })();
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
