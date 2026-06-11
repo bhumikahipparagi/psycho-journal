@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Psycho — your journal</title>
+<meta name="description" content="A soft, dark journal for writing, drawing, and speaking.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#181420">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Psycho">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Karla:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#181420;
+  --surface:#221c2e;
+  --surface-2:#2a2338;
+  --line:#352c46;
+  --ink:#ece7f3;
+  --ink-dim:#9a8fb0;
+  --lavender:#c9b8f0;
+  --peach:#ffc9b0;
+  --mint:#b5e8cd;
+  --blossom:#f5b8d2;
+  --butter:#f3e2a6;
+  --danger:#f08a9b;
+  --radius:18px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{height:100%}
+body{
+  min-height:100%;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Karla',system-ui,sans-serif;
+  font-size:16px;
+  line-height:1.55;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background-image:
+    radial-gradient(circle at 15% 8%, rgba(201,184,240,.06), transparent 40%),
+    radial-gradient(circle at 85% 90%, rgba(245,184,210,.05), transparent 45%);
+  background-attachment:fixed;
+}
+.wrap{max-width:680px;margin:0 auto;padding:20px 16px 80px}
+
+/* ---------- header ---------- */
+header{display:flex;align-items:baseline;justify-content:space-between;margin:8px 2px 20px}
+h1{
+  font-family:'Fraunces',serif;
+  font-weight:600;font-style:italic;
+  font-size:2rem;letter-spacing:.01em;
+  background:linear-gradient(105deg,var(--lavender),var(--blossom) 55%,var(--peach));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.date-today{font-family:'DM Mono',monospace;font-size:.78rem;color:var(--ink-dim)}
+
+/* ---------- composer ---------- */
+.composer{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+  box-shadow:0 8px 30px rgba(0,0,0,.35);
+}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tab{
+  flex:1;padding:13px 0;
+  background:none;border:none;cursor:pointer;
+  font-family:'Karla',sans-serif;font-weight:700;font-size:.92rem;
+  color:var(--ink-dim);
+  border-bottom:2.5px solid transparent;
+  transition:color .2s,border-color .2s;
+}
+.tab[aria-selected="true"]{color:var(--ink)}
+.tab[data-mode="write"][aria-selected="true"]{border-color:var(--lavender)}
+.tab[data-mode="draw"][aria-selected="true"]{border-color:var(--mint)}
+.tab[data-mode="speak"][aria-selected="true"]{border-color:var(--blossom)}
+.panel{display:none;padding:16px}
+.panel.active{display:block}
+
+/* write */
+textarea{
+  width:100%;min-height:130px;resize:vertical;
+  background:var(--bg);border:1px solid var(--line);border-radius:12px;
+  color:var(--ink);font-family:'Karla',sans-serif;font-size:1.02rem;line-height:1.6;
+  padding:14px;outline:none;
+}
+textarea:focus{border-color:var(--lavender)}
+textarea::placeholder{color:#6f6585}
+
+/* draw */
+.canvas-shell{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#1d1828;touch-action:none}
+canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
+.draw-tools{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.swatch{
+  width:30px;height:30px;border-radius:50%;
+  border:2px solid transparent;cursor:pointer;padding:0;
+  transition:transform .15s,border-color .15s;
+}
+.swatch[aria-pressed="true"]{border-color:var(--ink);transform:scale(1.15)}
+.tool-btn{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  color:var(--ink-dim);font-family:'Karla',sans-serif;font-weight:700;font-size:.82rem;
+  padding:7px 12px;cursor:pointer;
+}
+.tool-btn[aria-pressed="true"]{color:var(--bg);background:var(--mint);border-color:var(--mint)}
+
+/* speak */
+.speak-stage{display:flex;flex-direction:column;align-items:center;gap:14px;padding:8px 0 4px}
+.mic-orb{
+  width:84px;height:84px;border-radius:50%;
+  border:none;cursor:pointer;
+  background:radial-gradient(circle at 32% 30%, #ffd9e6, var(--blossom) 60%, #d893b3);
+  box-shadow:0 0 0 0 rgba(245,184,210,.4);
+  display:grid;place-items:center;
+  transition:transform .2s;
+}
+.mic-orb svg{width:32px;height:32px;fill:#3a2030}
+.mic-orb.recording{animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(245,184,210,.45)}
+  100%{box-shadow:0 0 0 26px rgba(245,184,210,0)}
+}
+.rec-time{font-family:'DM Mono',monospace;font-size:.95rem;color:var(--blossom);min-height:1.4em}
+.live-transcript{
+  width:100%;min-height:54px;max-height:160px;overflow-y:auto;
+  background:var(--bg);border:1px dashed var(--line);border-radius:12px;
+  padding:12px;font-size:.95rem;color:var(--ink-dim);
+}
+.live-transcript.has-text{color:var(--ink);border-style:solid}
+.speak-hint{font-size:.8rem;color:var(--ink-dim);text-align:center}
+
+/* save row */
+.save-row{display:flex;justify-content:flex-end;gap:10px;padding:0 16px 16px}
+.btn-save{
+  background:linear-gradient(110deg,var(--lavender),var(--blossom));
+  color:#241a30;font-weight:700;font-size:.95rem;
+  border:none;border-radius:12px;padding:11px 26px;cursor:pointer;
+  font-family:'Karla',sans-serif;
+  transition:opacity .2s,transform .1s;
+}
+.btn-save:active{transform:scale(.97)}
+.btn-save:disabled{opacity:.35;cursor:default}
+.btn-ghost{
+  background:none;border:1px solid var(--line);color:var(--ink-dim);
+  border-radius:12px;padding:11px 18px;cursor:pointer;font-family:'Karla',sans-serif;font-weight:700;font-size:.9rem;
+}
+
+/* ---------- feed ---------- */
+.feed-head{display:flex;align-items:center;justify-content:space-between;margin:30px 2px 14px}
+.feed-head h2{font-family:'Fraunces',serif;font-weight:400;font-size:1.25rem;color:var(--ink)}
+.backup-row{display:flex;gap:8px}
+.mini-btn{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  color:var(--ink-dim);font-size:.78rem;font-weight:700;font-family:'Karla',sans-serif;
+  padding:6px 11px;cursor:pointer;
+}
+.mini-btn:hover{color:var(--ink)}
+
+.entry{
+  position:relative;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:22px 18px 16px;
+  margin-bottom:18px;
+}
+/* signature: washi tape strip */
+.tape{
+  position:absolute;top:-9px;left:22px;
+  width:74px;height:20px;border-radius:3px;
+  opacity:.85;
+  transform:rotate(-3.5deg);
+  box-shadow:0 1px 3px rgba(0,0,0,.3);
+  background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.13) 0 6px,transparent 6px 12px);
+}
+.entry:nth-child(even) .tape{transform:rotate(2.5deg);left:auto;right:26px}
+.tape.write{background-color:var(--lavender)}
+.tape.draw{background-color:var(--mint)}
+.tape.speak{background-color:var(--blossom)}
+.entry-meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.entry-time{font-family:'DM Mono',monospace;font-size:.74rem;color:var(--ink-dim)}
+.entry-del{background:none;border:none;color:#6f6585;cursor:pointer;font-size:.78rem;font-family:'Karla',sans-serif;font-weight:700}
+.entry-del:hover{color:var(--danger)}
+.entry-text{white-space:pre-wrap;font-size:1rem}
+.entry-text.transcript{color:var(--ink-dim);font-size:.93rem;margin-top:10px;border-left:2px solid var(--blossom);padding-left:10px}
+.entry img{width:100%;border-radius:12px;border:1px solid var(--line);background:#1d1828}
+.entry audio{width:100%;margin-top:4px;border-radius:10px}
+.empty{
+  text-align:center;color:var(--ink-dim);padding:46px 20px;
+  border:1.5px dashed var(--line);border-radius:var(--radius);
+  font-size:.95rem;
+}
+.empty .sparkle{font-family:'Fraunces',serif;font-style:italic;font-size:1.2rem;color:var(--lavender);display:block;margin-bottom:6px}
+
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);
+  background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
+  padding:11px 20px;border-radius:14px;font-size:.9rem;font-weight:700;
+  transition:transform .3s;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+@media (min-width:700px){
+  canvas{height:400px}
+}
+:focus-visible{outline:2px solid var(--lavender);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Psycho</h1>
+    <span class="date-today" id="todayLabel"></span>
+  </header>
+
+  <section class="composer" aria-label="New entry">
+    <div class="tabs" role="tablist">
+      <button class="tab" data-mode="write" role="tab" aria-selected="true">✎ Write</button>
+      <button class="tab" data-mode="draw" role="tab" aria-selected="false">✐ Draw</button>
+      <button class="tab" data-mode="speak" role="tab" aria-selected="false">♪ Speak</button>
+    </div>
+
+    <div class="panel active" id="panel-write" role="tabpanel">
+      <textarea id="textInput" placeholder="What's on your mind today?"></textarea>
+    </div>
+
+    <div class="panel" id="panel-draw" role="tabpanel">
+      <div class="canvas-shell"><canvas id="canvas"></canvas></div>
+      <div class="draw-tools" id="drawTools">
+        <button class="swatch" style="background:#c9b8f0" data-color="#c9b8f0" aria-pressed="true" aria-label="lavender pen"></button>
+        <button class="swatch" style="background:#ffc9b0" data-color="#ffc9b0" aria-pressed="false" aria-label="peach pen"></button>
+        <button class="swatch" style="background:#b5e8cd" data-color="#b5e8cd" aria-pressed="false" aria-label="mint pen"></button>
+        <button class="swatch" style="background:#f5b8d2" data-color="#f5b8d2" aria-pressed="false" aria-label="blossom pen"></button>
+        <button class="swatch" style="background:#f3e2a6" data-color="#f3e2a6" aria-pressed="false" aria-label="butter pen"></button>
+        <button class="swatch" style="background:#ece7f3" data-color="#ece7f3" aria-pressed="false" aria-label="white pen"></button>
+        <button class="tool-btn" id="eraserBtn" aria-pressed="false">Eraser</button>
+        <button class="tool-btn" id="clearBtn">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-speak" role="tabpanel">
+      <div class="speak-stage">
+        <button class="mic-orb" id="micBtn" aria-label="Start recording">
+          <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+        </button>
+        <div class="rec-time" id="recTime"></div>
+        <div class="live-transcript" id="liveTranscript">Tap the orb to record. Your voice is saved, and what you say is written down too.</div>
+        <p class="speak-hint" id="speakHint"></p>
+      </div>
+    </div>
+
+    <div class="save-row">
+      <button class="btn-ghost" id="discardBtn">Discard</button>
+      <button class="btn-save" id="saveBtn">Save entry</button>
+    </div>
+  </section>
+
+  <div class="feed-head">
+    <h2>Your pages</h2>
+    <div class="backup-row">
+      <button class="mini-btn" id="exportBtn">Backup ↓</button>
+      <button class="mini-btn" id="importBtn">Restore ↑</button>
+      <input type="file" id="importFile" accept=".json" hidden>
+    </div>
+  </div>
+  <div id="feed"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ IndexedDB — nothing gets lost ============ */
+const DB_NAME='psycho-journal', STORE='entries', DRAFT='drafts';
+let db;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(DB_NAME,1);
+    r.onupgradeneeded=e=>{
+      const d=e.target.result;
+      if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:'id'});
+      if(!d.objectStoreNames.contains(DRAFT)) d.createObjectStore(DRAFT,{keyPath:'key'});
+    };
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+function tx(store,mode,fn){
+  return new Promise((res,rej)=>{
+    const t=db.transaction(store,mode), s=t.objectStore(store), out=fn(s);
+    t.oncomplete=()=>res(out&&out.result!==undefined?out.result:undefined);
+    t.onerror=()=>rej(t.error);
+  });
+}
+const putEntry=e=>tx(STORE,'readwrite',s=>s.put(e));
+const delEntry=id=>tx(STORE,'readwrite',s=>s.delete(id));
+const allEntries=()=>new Promise((res,rej)=>{
+  const t=db.transaction(STORE,'readonly'),req=t.objectStore(STORE).getAll();
+  req.onsuccess=()=>res(req.result.sort((a,b)=>b.created-a.created));
+  req.onerror=()=>rej(req.error);
+});
+const saveDraft=(key,value)=>tx(DRAFT,'readwrite',s=>s.put({key,value}));
+const clearDraft=key=>tx(DRAFT,'readwrite',s=>s.delete(key));
+const loadDraftKey=key=>new Promise(res=>{
+  const t=db.transaction(DRAFT,'readonly'),req=t.objectStore(DRAFT).get(key);
+  req.onsuccess=()=>res(req.result?req.result.value:null);
+  req.onerror=()=>res(null);
+});
+
+/* ============ helpers ============ */
+const $=id=>document.getElementById(id);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2400)}
+function fmt(ts){
+  return new Date(ts).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+$('todayLabel').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+
+/* ============ tabs ============ */
+let mode='write';
+document.querySelectorAll('.tab').forEach(b=>{
+  b.addEventListener('click',()=>{
+    mode=b.dataset.mode;
+    document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t===b));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    $('panel-'+mode).classList.add('active');
+    if(mode==='draw') fitCanvas();
+  });
+});
+
+/* ============ write (with autosaved draft) ============ */
+const textInput=$('textInput');
+let draftTimer;
+textInput.addEventListener('input',()=>{
+  clearTimeout(draftTimer);
+  draftTimer=setTimeout(()=>saveDraft('text',textInput.value),400);
+});
+
+/* ============ draw ============ */
+const canvas=$('canvas'),ctx=canvas.getContext('2d');
+let penColor='#c9b8f0',erasing=false,drawing=false,hasInk=false,last=null;
+function fitCanvas(){
+  const shell=canvas.parentElement,dpr=window.devicePixelRatio||1;
+  const w=shell.clientWidth,h=canvas.clientHeight||320;
+  // preserve current drawing on resize
+  const snap=hasInk?canvas.toDataURL():null;
+  canvas.width=w*dpr;canvas.height=h*dpr;
+  ctx.scale(dpr,dpr);ctx.lineCap='round';ctx.lineJoin='round';
+  if(snap){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,w,h);img.src=snap;}
+}
+window.addEventListener('resize',()=>{if(mode==='draw')fitCanvas()});
+fitCanvas();
+
+function pos(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,p:e.pressure||0.5}}
+canvas.addEventListener('pointerdown',e=>{
+  e.preventDefault();canvas.setPointerCapture(e.pointerId);
+  drawing=true;last=pos(e);
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!drawing)return;
+  const p=pos(e);
+  ctx.globalCompositeOperation=erasing?'destination-out':'source-over';
+  ctx.strokeStyle=penColor;
+  ctx.lineWidth=erasing?26:Math.max(1.4,(p.p||0.5)*6);
+  ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();
+  last=p;hasInk=true;
+});
+['pointerup','pointercancel','pointerleave'].forEach(ev=>canvas.addEventListener(ev,()=>{drawing=false;last=null;persistSketch()}));
+let sketchTimer;
+function persistSketch(){
+  clearTimeout(sketchTimer);
+  sketchTimer=setTimeout(()=>{
+    if(!db)return;
+    if(hasInk) saveDraft('sketch',canvas.toDataURL('image/png'));
+    else clearDraft('sketch');
+  },300);
+}
+
+document.querySelectorAll('.swatch').forEach(s=>{
+  s.addEventListener('click',()=>{
+    penColor=s.dataset.color;erasing=false;
+    $('eraserBtn').setAttribute('aria-pressed','false');
+    document.querySelectorAll('.swatch').forEach(x=>x.setAttribute('aria-pressed',x===s));
+  });
+});
+$('eraserBtn').addEventListener('click',()=>{
+  erasing=!erasing;
+  $('eraserBtn').setAttribute('aria-pressed',erasing);
+});
+$('clearBtn').addEventListener('click',()=>{
+  ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;persistSketch();
+});
+
+/* ============ speak ============ */
+let mediaRecorder,chunks=[],recStart,recTimer,recording=false,audioBlob=null,transcript='',recog=null;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR) $('speakHint').textContent='Live transcription isn\u2019t available in this browser — your voice note will still be saved.';
+
+$('micBtn').addEventListener('click',async()=>{
+  if(recording){stopRec();return}
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const mime=MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':
+               MediaRecorder.isTypeSupported('audio/webm')?'audio/webm':'';
+    mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+    chunks=[];audioBlob=null;transcript='';
+    mediaRecorder.ondataavailable=e=>{
+      if(e.data.size)chunks.push(e.data);
+      if(db&&chunks.length)saveDraft('voice',{chunks:[...chunks],transcript,mime:mediaRecorder.mimeType||'audio/webm'});
+    };
+    mediaRecorder.onstop=()=>{
+      audioBlob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'});
+      stream.getTracks().forEach(t=>t.stop());
+    };
+    mediaRecorder.start(1000); // collect every second so nothing is lost
+    recording=true;recStart=Date.now();
+    $('micBtn').classList.add('recording');
+    $('micBtn').setAttribute('aria-label','Stop recording');
+    recTimer=setInterval(()=>{
+      const s=Math.floor((Date.now()-recStart)/1000);
+      $('recTime').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+    },300);
+    if(SR){
+      recog=new SR();recog.continuous=true;recog.interimResults=true;
+      recog.onresult=e=>{
+        let interim='';
+        for(let i=e.resultIndex;i<e.results.length;i++){
+          if(e.results[i].isFinal) transcript+=e.results[i][0].transcript+' ';
+          else interim+=e.results[i][0].transcript;
+        }
+        const el=$('liveTranscript');
+        el.textContent=(transcript+interim)||'Listening…';
+        el.classList.add('has-text');
+      };
+      recog.onerror=()=>{};
+      try{recog.start()}catch(_){}
+    } else {
+      $('liveTranscript').textContent='Recording… (voice saved, no live transcript here)';
+    }
+  }catch(err){
+    toast('Microphone permission needed');
+  }
+});
+function stopRec(){
+  recording=false;clearInterval(recTimer);
+  $('micBtn').classList.remove('recording');
+  $('micBtn').setAttribute('aria-label','Start recording');
+  if(mediaRecorder&&mediaRecorder.state!=='inactive')mediaRecorder.stop();
+  if(recog){try{recog.stop()}catch(_){}}
+}
+
+/* ============ save / discard ============ */
+$('saveBtn').addEventListener('click',async()=>{
+  if(mode==='write'){
+    const txt=textInput.value.trim();
+    if(!txt){toast('Nothing to save yet');return}
+    await putEntry({id:uid(),type:'write',created:Date.now(),text:txt});
+    textInput.value='';clearDraft('text');
+  }
+  if(mode==='draw'){
+    if(!hasInk){toast('The page is blank');return}
+    const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));
+    await putEntry({id:uid(),type:'draw',created:Date.now(),image:blob});
+    ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;clearDraft('sketch');
+  }
+  if(mode==='speak'){
+    if(recording)stopRec();
+    // give onstop a beat to assemble the blob
+    await new Promise(r=>setTimeout(r,350));
+    if(!audioBlob){toast('Record something first');return}
+    await putEntry({id:uid(),type:'speak',created:Date.now(),audio:audioBlob,text:transcript.trim()});
+    audioBlob=null;transcript='';clearDraft('voice');$('speakHint').textContent='';
+    $('liveTranscript').textContent='Tap the orb to record.';
+    $('liveTranscript').classList.remove('has-text');
+    $('recTime').textContent='';
+  }
+  toast('Saved ♡');
+  render();
+});
+$('discardBtn').addEventListener('click',()=>{
+  if(!confirm('Discard this draft? It will be gone for good.'))return;
+  if(mode==='write'){textInput.value='';clearDraft('text')}
+  if(mode==='draw'){ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;clearDraft('sketch')}
+  if(mode==='speak'){if(recording)stopRec();audioBlob=null;transcript='';clearDraft('voice');$('liveTranscript').textContent='Tap the orb to record.';$('liveTranscript').classList.remove('has-text');$('recTime').textContent='';$('speakHint').textContent=''}
+});
+
+/* flush everything the moment the app is backgrounded or closed */
+function flushDrafts(){
+  if(!db)return;
+  clearTimeout(draftTimer);clearTimeout(sketchTimer);
+  saveDraft('text',textInput.value);
+  if(hasInk)saveDraft('sketch',canvas.toDataURL('image/png'));
+  if(recording&&chunks.length)saveDraft('voice',{chunks:[...chunks],transcript,mime:(mediaRecorder&&mediaRecorder.mimeType)||'audio/webm'});
+}
+window.addEventListener('pagehide',flushDrafts);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushDrafts()});
+
+/* ============ feed ============ */
+async function render(){
+  const feed=$('feed');feed.innerHTML='';
+  const entries=await allEntries();
+  if(!entries.length){
+    feed.innerHTML='<div class="empty"><span class="sparkle">a quiet page, waiting</span>Write, draw, or speak — your first entry will live here.</div>';
+    return;
+  }
+  for(const e of entries){
+    const card=document.createElement('article');card.className='entry';
+    const tape=document.createElement('div');tape.className='tape '+e.type;card.appendChild(tape);
+    const meta=document.createElement('div');meta.className='entry-meta';
+    meta.innerHTML='<span class="entry-time">'+fmt(e.created)+'</span>';
+    const del=document.createElement('button');del.className='entry-del';del.textContent='remove';
+    del.addEventListener('click',async()=>{
+      if(confirm('Remove this entry? This can\u2019t be undone.')){await delEntry(e.id);render()}
+    });
+    meta.appendChild(del);card.appendChild(meta);
+    if(e.type==='write'){
+      const p=document.createElement('p');p.className='entry-text';p.textContent=e.text;card.appendChild(p);
+    }
+    if(e.type==='draw'&&e.image){
+      const img=document.createElement('img');img.alt='Drawing';img.src=URL.createObjectURL(e.image);card.appendChild(img);
+    }
+    if(e.type==='speak'){
+      if(e.audio){
+        const a=document.createElement('audio');a.controls=true;a.src=URL.createObjectURL(e.audio);card.appendChild(a);
+      }
+      if(e.text){
+        const p=document.createElement('p');p.className='entry-text transcript';p.textContent=e.text;card.appendChild(p);
+      }
+    }
+    feed.appendChild(card);
+  }
+}
+
+/* ============ backup / restore ============ */
+const blobToB64=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
+const b64ToBlob=async d=>(await fetch(d)).blob();
+
+$('exportBtn').addEventListener('click',async()=>{
+  const entries=await allEntries();
+  const out=[];
+  for(const e of entries){
+    const c={...e};
+    if(c.image)c.image=await blobToB64(c.image);
+    if(c.audio)c.audio=await blobToB64(c.audio);
+    out.push(c);
+  }
+  const blob=new Blob([JSON.stringify({app:'psycho',v:1,entries:out})],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='psycho-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  toast('Backup downloaded');
+});
+$('importBtn').addEventListener('click',()=>$('importFile').click());
+$('importFile').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const data=JSON.parse(await f.text());
+    if(data.app!=='psycho')throw 0;
+    for(const en of data.entries){
+      if(typeof en.image==='string')en.image=await b64ToBlob(en.image);
+      if(typeof en.audio==='string')en.audio=await b64ToBlob(en.audio);
+      await putEntry(en);
+    }
+    toast('Restored '+data.entries.length+' entries');
+    render();
+  }catch(_){toast('That file doesn\u2019t look like a Psycho backup')}
+  e.target.value='';
+});
+
+/* ============ boot ============ */
+(async()=>{
+  db=await openDB();
+  // ask the browser to never evict this data
+  if(navigator.storage&&navigator.storage.persist){
+    navigator.storage.persist();
+  }
+  textInput.value=(await loadDraftKey('text'))||'';
+  const sk=await loadDraftKey('sketch');
+  if(sk){
+    const img=new Image();
+    img.onload=()=>{ctx.drawImage(img,0,0,canvas.clientWidth||canvas.parentElement.clientWidth,canvas.clientHeight||320);hasInk=true};
+    img.src=sk;
+  }
+  const vd=await loadDraftKey('voice');
+  if(vd&&vd.chunks&&vd.chunks.length){
+    audioBlob=new Blob(vd.chunks,{type:vd.mime||'audio/webm'});
+    transcript=vd.transcript||'';
+    $('liveTranscript').textContent=transcript||'Recovered an unsaved recording.';
+    $('liveTranscript').classList.add('has-text');
+    $('speakHint').textContent='Found an unsaved recording from last time \u2661 press Save entry to keep it.';
+  }
+  render();
+})();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
