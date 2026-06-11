@@ -366,6 +366,7 @@ textInput.addEventListener('input',()=>{
 /* ============ draw ============ */
 const canvas=$('canvas'),ctx=canvas.getContext('2d');
 let penColor='#c9b8f0',erasing=false,drawing=false,hasInk=false,last=null;
+let editingDrawId=null,editingDrawCreated=0;
 function fitCanvas(){
   const shell=canvas.parentElement,dpr=window.devicePixelRatio||1;
   const w=shell.clientWidth,h=canvas.clientHeight||320;
@@ -487,7 +488,13 @@ $('saveBtn').addEventListener('click',async()=>{
   if(mode==='draw'){
     if(!hasInk){toast('The page is blank');return}
     const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));
-    await putEntry({id:uid(),type:'draw',created:Date.now(),image:blob});
+    if(editingDrawId){
+      await putEntry({id:editingDrawId,type:'draw',created:editingDrawCreated,updated:Date.now(),image:blob});
+      await markDirty(editingDrawId);
+      editingDrawId=null;
+    }else{
+      await putEntry({id:uid(),type:'draw',created:Date.now(),image:blob});
+    }
     ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;clearDraft('sketch');
   }
   if(mode==='speak'){
@@ -507,7 +514,7 @@ $('saveBtn').addEventListener('click',async()=>{
 $('discardBtn').addEventListener('click',()=>{
   if(!confirm('Discard this draft? It will be gone for good.'))return;
   if(mode==='write'){textInput.value='';clearDraft('text')}
-  if(mode==='draw'){ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;clearDraft('sketch')}
+  if(mode==='draw'){ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;editingDrawId=null;clearDraft('sketch')}
   if(mode==='speak'){if(recording)stopRec();audioBlob=null;transcript='';clearDraft('voice');$('liveTranscript').textContent='Tap the orb to record.';$('liveTranscript').classList.remove('has-text');$('recTime').textContent='';$('speakHint').textContent=''}
 });
 
@@ -534,7 +541,17 @@ async function render(){
     const card=document.createElement('article');card.className='entry';
     const tape=document.createElement('div');tape.className='tape '+e.type;card.appendChild(tape);
     const meta=document.createElement('div');meta.className='entry-meta';
-    meta.innerHTML='<span class="entry-time">'+fmt(e.created)+'</span>';
+    meta.innerHTML='<span class="entry-time">'+fmt(e.created)+(e.updated?' · edited':'')+'</span>';
+    if(e.type==='write'||e.type==='speak'){
+      const ed=document.createElement('button');ed.className='entry-del';ed.textContent='edit';ed.style.marginRight='12px';
+      ed.addEventListener('click',()=>startTextEdit(card,e));
+      meta.appendChild(ed);
+    }
+    if(e.type==='draw'&&e.image){
+      const ed=document.createElement('button');ed.className='entry-del';ed.textContent='edit';ed.style.marginRight='12px';
+      ed.addEventListener('click',()=>editDrawing(e));
+      meta.appendChild(ed);
+    }
     const del=document.createElement('button');del.className='entry-del';del.textContent='remove';
     del.addEventListener('click',async()=>{
       if(confirm('Remove this entry from this device? A synced copy stays safe in your archive.')){
@@ -561,6 +578,42 @@ async function render(){
     }
     feed.appendChild(card);
   }
+}
+
+/* ============ editing ============ */
+function startTextEdit(card,e){
+  if(card.querySelector('textarea'))return;
+  const p=card.querySelector(e.type==='speak'?'.entry-text.transcript':'.entry-text');
+  const ta=document.createElement('textarea');
+  ta.value=e.text||'';ta.style.minHeight='90px';
+  ta.placeholder=e.type==='speak'?'Transcript…':'Your entry…';
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:10px';
+  const cn=document.createElement('button');cn.className='tool-btn';cn.textContent='Cancel';
+  const sv=document.createElement('button');sv.className='tool-btn';sv.textContent='Save changes';
+  row.appendChild(cn);row.appendChild(sv);
+  if(p)p.replaceWith(ta);else card.appendChild(ta);
+  ta.after(row);ta.focus();
+  cn.addEventListener('click',()=>render());
+  sv.addEventListener('click',async()=>{
+    e.text=ta.value.trim();e.updated=Date.now();
+    await putEntry(e);await markDirty(e.id);
+    toast('Updated ♡');render();maybeSync();
+  });
+}
+function editDrawing(e){
+  document.querySelector('.tab[data-mode="draw"]').click();
+  const img=new Image();
+  img.onload=()=>{
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.globalCompositeOperation='source-over';
+    ctx.drawImage(img,0,0,canvas.clientWidth||canvas.parentElement.clientWidth,canvas.clientHeight||320);
+    hasInk=true;editingDrawId=e.id;editingDrawCreated=e.created;
+    persistSketch();
+    toast('Editing — Save entry updates the original');
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+  img.src=URL.createObjectURL(e.image);
 }
 
 /* ============ backup / restore ============ */
@@ -631,6 +684,7 @@ async function ghFetch(path,opts,raw){
 }
 async function entryToJSON(e){
   const c={id:e.id,type:e.type,created:e.created,text:e.text||''};
+  if(e.updated)c.updated=e.updated;
   if(e.image)c.image=await blobToB64(e.image);
   if(e.audio)c.audio=await blobToB64(e.audio);
   return JSON.stringify(c);
@@ -646,6 +700,8 @@ async function syncNow(silent){
   const btn=$('syncBtn');btn.textContent='Syncing…';
   try{
     const tomb=new Set((await loadDraftKey('tombstones'))||[]);
+    const dirty=new Set((await loadDraftKey('dirty'))||[]);
+    const shas=(await loadDraftKey('shas'))||{};
     let remote=[];
     const listRes=await ghFetch('/contents/entries');
     if(listRes.status===200)remote=await listRes.json();
@@ -654,22 +710,30 @@ async function syncNow(silent){
     const local=await allEntries();
     const localIds=new Set(local.map(e=>e.id));
     for(const e of local){
-      if(remoteMap.has(e.id))continue;
+      const rf=remoteMap.get(e.id);
+      if(rf&&!dirty.has(e.id))continue;
       const body=await entryToJSON(e);
-      const r=await ghFetch('/contents/entries/'+e.id+'.json',{
-        method:'PUT',
-        body:JSON.stringify({message:'add '+e.id,content:b64encode(body)})
-      });
+      const payload={message:(rf?'update ':'add ')+e.id,content:b64encode(body)};
+      if(rf)payload.sha=rf.sha;
+      const r=await ghFetch('/contents/entries/'+e.id+'.json',{method:'PUT',body:JSON.stringify(payload)});
       if(!r.ok)throw new Error('push '+r.status);
+      const res=await r.json();
+      if(res.content&&res.content.sha)shas[e.id]=res.content.sha;
+      dirty.delete(e.id);
     }
     for(const pair of remoteMap){
-      const id=pair[0];
-      if(localIds.has(id)||tomb.has(id))continue;
+      const id=pair[0],f=pair[1];
+      if(tomb.has(id))continue;
+      const changedRemotely=localIds.has(id)&&shas[id]&&shas[id]!==f.sha&&!dirty.has(id);
+      if(localIds.has(id)&&!changedRemotely){if(!shas[id])shas[id]=f.sha;continue}
       const r=await ghFetch('/contents/entries/'+id+'.json',null,true);
       if(!r.ok)continue;
       const e=await jsonToEntry(await r.json());
       await putEntry(e);
+      shas[id]=f.sha;
     }
+    await saveDraft('shas',shas);
+    await saveDraft('dirty',Array.from(dirty));
     btn.textContent='Sync ⟳';
     if(!silent)toast('Synced ✓');
     render();
@@ -679,6 +743,10 @@ async function syncNow(silent){
       if(!silent){$('settingsPanel').hidden=false;toast('Set up sync first ⚙')}
     }else if(!silent)toast('Sync failed — check token & connection');
   }finally{syncBusy=false}
+}
+async function markDirty(id){
+  const d=(await loadDraftKey('dirty'))||[];
+  if(!d.includes(id)){d.push(id);await saveDraft('dirty',d)}
 }
 async function maybeSync(){try{if(await loadDraftKey('gh'))syncNow(true)}catch(_){}}
 
