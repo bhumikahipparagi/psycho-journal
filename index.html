@@ -213,6 +213,7 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
 }
 .toast.show{transform:translateX(-50%) translateY(0)}
 
+.no-touch-select,.no-touch-select *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
 }
@@ -249,6 +250,7 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
         <button class="swatch" style="background:#f5b8d2" data-color="#f5b8d2" aria-pressed="false" aria-label="blossom pen"></button>
         <button class="swatch" style="background:#f3e2a6" data-color="#f3e2a6" aria-pressed="false" aria-label="butter pen"></button>
         <button class="swatch" style="background:#ece7f3" data-color="#ece7f3" aria-pressed="false" aria-label="white pen"></button>
+        <button class="tool-btn" id="palmBtn" aria-pressed="true">Palm rest: on</button>
         <button class="tool-btn" id="eraserBtn" aria-pressed="false">Eraser</button>
         <button class="tool-btn" id="clearBtn">Clear</button>
       </div>
@@ -352,6 +354,7 @@ document.querySelectorAll('.tab').forEach(b=>{
     document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
     $('panel-'+mode).classList.add('active');
     if(mode==='draw') fitCanvas();
+    updateGuardClass();
   });
 });
 
@@ -381,11 +384,12 @@ fitCanvas();
 
 function pos(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,p:e.pressure||0.5}}
 canvas.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='touch')return; // stylus (or mouse on desktop) only — palms can't draw
   e.preventDefault();canvas.setPointerCapture(e.pointerId);
   drawing=true;last=pos(e);
 });
 canvas.addEventListener('pointermove',e=>{
-  if(!drawing)return;
+  if(!drawing||e.pointerType==='touch')return;
   const p=pos(e);
   ctx.globalCompositeOperation=erasing?'destination-out':'source-over';
   ctx.strokeStyle=penColor;
@@ -403,6 +407,33 @@ function persistSketch(){
     else clearDraft('sketch');
   },300);
 }
+
+/* palm guard: while Draw is open and guard is on, finger/palm touches do nothing anywhere —
+   only the stylus interacts (it can tap buttons too). Toggle stays finger-reachable. */
+let palmGuard=true;
+function guardActive(){return palmGuard&&mode==='draw'}
+function updateGuardClass(){document.body.classList.toggle('no-touch-select',guardActive())}
+function blockTouchPointer(e){
+  if(!guardActive())return;
+  if(e.target&&e.target.id==='palmBtn')return;
+  if(e.pointerType==='touch'){e.preventDefault();e.stopPropagation()}
+}
+['pointerdown','pointermove','pointerup'].forEach(ev=>
+  document.addEventListener(ev,blockTouchPointer,{capture:true,passive:false}));
+function blockTouchEvt(e){
+  if(!guardActive())return;
+  if(e.target&&e.target.id==='palmBtn')return;
+  e.preventDefault();
+}
+document.addEventListener('touchstart',blockTouchEvt,{capture:true,passive:false});
+document.addEventListener('touchmove',blockTouchEvt,{capture:true,passive:false});
+$('palmBtn').addEventListener('click',()=>{
+  palmGuard=!palmGuard;
+  $('palmBtn').setAttribute('aria-pressed',palmGuard);
+  $('palmBtn').textContent='Palm rest: '+(palmGuard?'on':'off');
+  updateGuardClass();
+  toast(palmGuard?'Palm guard on — only your stylus works in Draw':'Palm guard off — finger touch works again');
+});
 
 document.querySelectorAll('.swatch').forEach(s=>{
   s.addEventListener('click',()=>{
