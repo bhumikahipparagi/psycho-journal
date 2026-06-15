@@ -159,7 +159,16 @@ textarea:focus{border-color:var(--lavender)}
 textarea::placeholder{color:#6f6585}
 
 /* draw */
-.write-tools{display:flex;gap:8px;margin-top:10px}
+.write-tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.title-input{
+  width:calc(100% - 32px);margin:14px 16px 0;
+  background:none;border:none;border-bottom:1px solid var(--line);
+  color:var(--ink);font-family:'Fraunces',serif;font-size:1.25rem;
+  padding:4px 2px 8px;outline:none;
+}
+.title-input::placeholder{color:#6f6585;font-style:italic}
+.title-input:focus{border-color:var(--lavender)}
+body.zen .title-input{margin:0 0 10px;width:100%;font-size:1.5rem}
 .canvas-shell{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#1d1828;touch-action:none}
 canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;cursor:crosshair}
 .draw-tools{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
@@ -253,6 +262,7 @@ canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;c
 .entry-time{font-family:'DM Mono',monospace;font-size:.74rem;color:var(--ink-dim)}
 .entry-del{background:none;border:none;color:#6f6585;cursor:pointer;font-size:.78rem;font-family:'Karla',sans-serif;font-weight:700}
 .entry-del:hover{color:var(--danger)}
+.entry-title{font-family:'Fraunces',serif;font-weight:600;font-size:1.15rem;margin:2px 0 10px;color:var(--ink)}
 .entry-text{white-space:pre-wrap;font-size:1rem}
 .entry-text.transcript{color:var(--ink-dim);font-size:.93rem;margin-top:10px;border-left:2px solid var(--blossom);padding-left:10px}
 .entry img{width:100%;border-radius:12px;border:1px solid var(--line);background:#1d1828}
@@ -307,6 +317,7 @@ canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;c
       <button class="tab" data-mode="speak" role="tab" aria-selected="false">♪ Speak</button>
     </div>
 
+    <input type="text" id="titleInput" class="title-input" placeholder="Title (optional)" maxlength="120">
     <div class="panel active" id="panel-write" role="tabpanel">
       <textarea id="textInput" placeholder="What's on your mind today?"></textarea>
       <div class="write-tools">
@@ -463,8 +474,12 @@ document.querySelectorAll('.tab').forEach(b=>{
 });
 
 /* ============ write (with autosaved draft) ============ */
-const textInput=$('textInput');
+const textInput=$('textInput'),titleInput=$('titleInput');
 let draftTimer;
+titleInput.addEventListener('input',()=>{
+  clearTimeout(draftTimer);
+  draftTimer=setTimeout(()=>{saveDraft('text',textInput.value);saveDraft('title',titleInput.value)},400);
+});
 /* ----- write undo / redo history ----- */
 let tUndo=[], tRedo=[], tLast='', tCommitTimer=null;
 function tUpdateButtons(){
@@ -481,7 +496,7 @@ function tCommit(){
 }
 function autoGrowText(){
   textInput.style.height='auto';
-  const min=document.body.classList.contains('zen')?(window.innerHeight-150):160;
+  const min=document.body.classList.contains('zen')?(window.innerHeight-180):160;
   textInput.style.height=Math.max(min,textInput.scrollHeight)+'px';
 }
 textInput.addEventListener('input',()=>{
@@ -780,18 +795,18 @@ $('saveBtn').addEventListener('click',async()=>{
   if(mode==='write'){
     const txt=textInput.value.trim();
     if(!txt){toast('Nothing to save yet');return}
-    await putEntry({id:uid(),type:'write',created:Date.now(),text:txt});
+    await putEntry({id:uid(),type:'write',created:Date.now(),text:txt,title:titleInput.value.trim()});
     textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');autoGrowText();
   }
   if(mode==='draw'){
     if(!hasInk){toast('The page is blank');return}
     const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));
     if(editingDrawId){
-      await putEntry({id:editingDrawId,type:'draw',created:editingDrawCreated,updated:Date.now(),image:blob});
+      await putEntry({id:editingDrawId,type:'draw',created:editingDrawCreated,updated:Date.now(),image:blob,title:titleInput.value.trim()});
       await markDirty(editingDrawId);
       editingDrawId=null;
     }else{
-      await putEntry({id:uid(),type:'draw',created:Date.now(),image:blob});
+      await putEntry({id:uid(),type:'draw',created:Date.now(),image:blob,title:titleInput.value.trim()});
     }
     ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;undoStack=[];redoStack=[];updateUndoButtons();clearDraft('sketch');
   }
@@ -800,18 +815,20 @@ $('saveBtn').addEventListener('click',async()=>{
     // give onstop a beat to assemble the blob
     await new Promise(r=>setTimeout(r,350));
     if(!audioBlob){toast('Record something first');return}
-    await putEntry({id:uid(),type:'speak',created:Date.now(),audio:audioBlob,text:transcript.trim()});
+    await putEntry({id:uid(),type:'speak',created:Date.now(),audio:audioBlob,text:transcript.trim(),title:titleInput.value.trim()});
     audioBlob=null;transcript='';clearDraft('voice');$('speakHint').textContent='';
     $('liveTranscript').textContent='Tap the orb to record.';
     $('liveTranscript').classList.remove('has-text');
     $('recTime').textContent='';
   }
+  titleInput.value='';clearDraft('title');
+  autoGrowText();
   toast('Saved ♡');
   render();maybeSync();
 });
 $('discardBtn').addEventListener('click',()=>{
   if(!confirm('Discard this draft? It will be gone for good.'))return;
-  if(mode==='write'){textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');autoGrowText()}
+  if(mode==='write'){textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');titleInput.value='';clearDraft('title');autoGrowText()}
   if(mode==='draw'){ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;editingDrawId=null;clearDraft('sketch')}
   if(mode==='speak'){if(recording)stopRec();audioBlob=null;transcript='';clearDraft('voice');$('liveTranscript').textContent='Tap the orb to record.';$('liveTranscript').classList.remove('has-text');$('recTime').textContent='';$('speakHint').textContent=''}
 });
@@ -888,6 +905,10 @@ async function render(){
 function startTextEdit(card,e){
   if(card.querySelector('textarea'))return;
   const p=card.querySelector(e.type==='speak'?'.entry-text.transcript':'.entry-text');
+  const ti=document.createElement('input');ti.type='text';ti.className='title-input';
+  ti.style.cssText='margin:0 0 10px;width:100%';ti.placeholder='Title (optional)';ti.value=e.title||'';
+  const existingTitle=card.querySelector('.entry-title');
+  if(existingTitle)existingTitle.replaceWith(ti);else card.querySelector('.entry-meta').after(ti);
   const ta=document.createElement('textarea');
   ta.value=e.text||'';ta.style.minHeight='90px';
   ta.placeholder=e.type==='speak'?'Transcript…':'Your entry…';
@@ -900,9 +921,11 @@ function startTextEdit(card,e){
   ta.after(row);ta.focus();
   cn.addEventListener('click',()=>render());
   sv.addEventListener('click',async()=>{
-    e.text=ta.value.trim();e.updated=Date.now();
+    e.text=ta.value.trim();e.title=ti.value.trim();e.updated=Date.now();
     await putEntry(e);await markDirty(e.id);
-    toast('Updated ♡');render();maybeSync();
+    toast('Updated ♡');
+    if($('entryView')&&$('entryView').classList.contains('show'))showEntryView(e);
+    render();maybeSync();
   });
 }
 function editDrawing(e){
@@ -923,6 +946,7 @@ function editDrawing(e){
 
 /* ============ sidebar drawer of past entries ============ */
 function previewText(e){
+  if(e.title&&e.title.trim())return e.title.trim();
   if(e.type==='write')return (e.text||'').slice(0,80)||'(empty note)';
   if(e.type==='speak')return '♪ '+((e.text||'').slice(0,72)||'voice note');
   if(e.type==='draw')return '✐ drawing';
@@ -1032,6 +1056,7 @@ function showEntryView(e){
     });
   });
   meta.appendChild(del);card.appendChild(meta);
+  if(e.title&&e.title.trim()){const h=document.createElement('h3');h.className='entry-title';h.textContent=e.title.trim();card.appendChild(h)}
   if(e.type==='write'){const p=document.createElement('p');p.className='entry-text';p.textContent=e.text;card.appendChild(p)}
   if(e.type==='draw'&&e.image){const img=document.createElement('img');img.alt='Drawing';img.src=URL.createObjectURL(e.image);card.appendChild(img)}
   if(e.type==='speak'){
@@ -1109,7 +1134,7 @@ async function ghFetch(path,opts,raw){
   }));
 }
 async function entryToJSON(e){
-  const c={id:e.id,type:e.type,created:e.created,text:e.text||''};
+  const c={id:e.id,type:e.type,created:e.created,text:e.text||'',title:e.title||''};
   if(e.updated)c.updated=e.updated;
   if(e.image)c.image=await blobToB64(e.image);
   if(e.audio)c.audio=await blobToB64(e.audio);
@@ -1217,6 +1242,7 @@ $('ghForget').addEventListener('click',async()=>{
     navigator.storage.persist();
   }
   textInput.value=(await loadDraftKey('text'))||'';
+  titleInput.value=(await loadDraftKey('title'))||'';
   tLast=textInput.value;tUndo=[];tRedo=[];tUpdateButtons();
   autoGrowText();
   const sk=await loadDraftKey('sketch');
