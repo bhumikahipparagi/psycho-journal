@@ -48,6 +48,66 @@ body{
 }
 .wrap{max-width:680px;margin:0 auto;padding:20px 16px 80px}
 
+/* menu / drawer */
+.menu-btn{background:none;border:none;color:var(--ink-dim);font-size:1.4rem;cursor:pointer;padding:0 8px 0 0;line-height:1}
+.menu-btn:hover{color:var(--ink)}
+.scrim{position:fixed;inset:0;background:rgba(10,8,16,.55);opacity:0;pointer-events:none;transition:opacity .25s;z-index:60}
+.scrim.show{opacity:1;pointer-events:auto}
+.drawer{
+  position:fixed;top:0;left:0;height:100%;width:min(320px,82vw);
+  background:var(--surface);border-right:1px solid var(--line);
+  transform:translateX(-102%);transition:transform .28s cubic-bezier(.4,0,.2,1);
+  z-index:61;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 14px) 0 14px;
+  box-shadow:8px 0 40px rgba(0,0,0,.4);
+}
+.drawer.show{transform:translateX(0)}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:0 18px 12px}
+.drawer-title{font-family:'Fraunces',serif;font-size:1.2rem}
+.drawer-close{background:none;border:none;color:var(--ink-dim);font-size:1.1rem;cursor:pointer}
+.drawer-search{
+  margin:0 14px 10px;padding:9px 12px;border-radius:10px;
+  background:var(--bg);border:1px solid var(--line);color:var(--ink);
+  font-family:'Karla',sans-serif;font-size:.9rem;outline:none;
+}
+.drawer-search:focus{border-color:var(--lavender)}
+.drawer-list{flex:1;overflow-y:auto;padding:0 10px}
+.drawer-item{
+  display:flex;gap:10px;align-items:flex-start;
+  padding:11px 12px;border-radius:12px;cursor:pointer;margin-bottom:3px;
+  border:1px solid transparent;
+}
+.drawer-item:hover{background:var(--surface-2)}
+.drawer-item .dot{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:none}
+.drawer-item .dot.write{background:var(--lavender)}
+.drawer-item .dot.draw{background:var(--mint)}
+.drawer-item .dot.speak{background:var(--blossom)}
+.drawer-item .di-body{min-width:0;flex:1}
+.drawer-item .di-when{font-family:'DM Mono',monospace;font-size:.68rem;color:var(--ink-dim);display:block;margin-bottom:2px}
+.drawer-item .di-prev{font-size:.86rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drawer-empty{padding:20px 16px;color:var(--ink-dim);font-size:.88rem}
+
+/* highlight an entry that was opened from the drawer */
+.entry.flash{animation:flash 1.4s ease}
+@keyframes flash{0%{box-shadow:0 0 0 2px var(--lavender)}100%{box-shadow:0 0 0 0 transparent}}
+
+/* zen / full-screen writing */
+body.zen .wrap{max-width:880px}
+body.zen header,body.zen .tabs,body.zen .save-row,body.zen .feed-head,
+body.zen #feed,body.zen .settings,body.zen #panel-draw,body.zen #panel-speak{display:none}
+body.zen .composer{border:none;background:none;box-shadow:none}
+body.zen #panel-write{padding:0}
+body.zen #textInput{
+  min-height:calc(100vh - 150px);
+  font-size:1.15rem;line-height:1.7;
+}
+body.zen .zen-exit{display:flex}
+.zen-exit{
+  display:none;position:fixed;top:calc(env(safe-area-inset-top) + 14px);right:16px;z-index:40;
+  background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
+  border-radius:10px;padding:8px 14px;cursor:pointer;font-family:'Karla',sans-serif;font-weight:700;font-size:.85rem;
+}
+
 /* ---------- header ---------- */
 header{display:flex;align-items:baseline;justify-content:space-between;margin:8px 2px 20px}
 h1{
@@ -227,6 +287,7 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
 <body>
 <div class="wrap">
   <header>
+    <button class="menu-btn" id="menuBtn" aria-label="Open past entries">☰</button>
     <h1>Psycho</h1>
     <span class="date-today" id="todayLabel"></span>
   </header>
@@ -243,6 +304,7 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
       <div class="write-tools">
         <button class="tool-btn" id="wUndo" disabled>↶ Undo</button>
         <button class="tool-btn" id="wRedo" disabled>↷ Redo</button>
+        <button class="tool-btn" id="zenBtn" aria-pressed="false">⤢ Full screen</button>
       </div>
     </div>
 
@@ -302,6 +364,17 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
   </section>
   <div id="feed"></div>
 </div>
+
+<button class="zen-exit" id="zenExit">✕ Exit full screen</button>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Past entries">
+  <div class="drawer-head">
+    <span class="drawer-title">Your pages</span>
+    <button class="drawer-close" id="drawerClose" aria-label="Close">✕</button>
+  </div>
+  <input type="search" id="drawerSearch" class="drawer-search" placeholder="Search entries…">
+  <div class="drawer-list" id="drawerList"></div>
+</aside>
 
 <div class="toast" id="toast"></div>
 
@@ -719,8 +792,9 @@ async function render(){
     feed.innerHTML='<div class="empty"><span class="sparkle">a quiet page, waiting</span>Write, draw, or speak — your first entry will live here.</div>';
     return;
   }
+  if($('drawer').classList.contains('show'))renderDrawer($('drawerSearch').value.trim());
   for(const e of entries){
-    const card=document.createElement('article');card.className='entry';
+    const card=document.createElement('article');card.className='entry';card.dataset.entry=e.id;
     const tape=document.createElement('div');tape.className='tape '+e.type;card.appendChild(tape);
     const meta=document.createElement('div');meta.className='entry-meta';
     meta.innerHTML='<span class="entry-time">'+fmt(e.created)+(e.updated?' · edited':'')+'</span>';
@@ -803,6 +877,75 @@ function editDrawing(e){
   };
   img.src=URL.createObjectURL(e.image);
 }
+
+/* ============ sidebar drawer of past entries ============ */
+function previewText(e){
+  if(e.type==='write')return (e.text||'').slice(0,80)||'(empty note)';
+  if(e.type==='speak')return '♪ '+((e.text||'').slice(0,72)||'voice note');
+  if(e.type==='draw')return '✐ drawing';
+  return '(entry)';
+}
+async function renderDrawer(filter){
+  const list=$('drawerList');list.innerHTML='';
+  let entries=await allEntries();
+  if(filter){
+    const f=filter.toLowerCase();
+    entries=entries.filter(e=>((e.text||'')+' '+e.type).toLowerCase().includes(f));
+  }
+  if(!entries.length){
+    list.innerHTML='<div class="drawer-empty">'+(filter?'No matches.':'No entries yet — write your first page.')+'</div>';
+    return;
+  }
+  for(const e of entries){
+    const item=document.createElement('button');item.className='drawer-item';
+    item.innerHTML='<span class="dot '+e.type+'"></span>'+
+      '<span class="di-body"><span class="di-when">'+fmt(e.created)+'</span>'+
+      '<span class="di-prev"></span></span>';
+    item.querySelector('.di-prev').textContent=previewText(e);
+    item.addEventListener('click',()=>{openEntryFromDrawer(e.id)});
+    list.appendChild(item);
+  }
+}
+function openDrawer(){
+  renderDrawer($('drawerSearch').value.trim());
+  $('drawer').classList.add('show');
+  $('scrim').classList.add('show');
+}
+function closeDrawer(){
+  $('drawer').classList.remove('show');
+  $('scrim').classList.remove('show');
+}
+function openEntryFromDrawer(id){
+  closeDrawer();
+  if(document.body.classList.contains('zen'))exitZen();
+  setTimeout(()=>{
+    const card=document.querySelector('[data-entry="'+id+'"]');
+    if(card){
+      card.scrollIntoView({behavior:'smooth',block:'center'});
+      card.classList.remove('flash');void card.offsetWidth;card.classList.add('flash');
+    }
+  },80);
+}
+$('menuBtn').addEventListener('click',openDrawer);
+$('drawerClose').addEventListener('click',closeDrawer);
+$('scrim').addEventListener('click',closeDrawer);
+$('drawerSearch').addEventListener('input',()=>renderDrawer($('drawerSearch').value.trim()));
+
+/* ============ zen full-screen writing ============ */
+function enterZen(){
+  document.body.classList.add('zen');
+  $('zenBtn').setAttribute('aria-pressed','true');
+  textInput.focus();
+}
+function exitZen(){
+  document.body.classList.remove('zen');
+  $('zenBtn').setAttribute('aria-pressed','false');
+}
+$('zenBtn').addEventListener('click',()=>{
+  if(document.body.classList.contains('zen'))exitZen();else enterZen();
+});
+$('zenExit').addEventListener('click',exitZen);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('zen'))exitZen()});
 
 /* ============ backup / restore ============ */
 const blobToB64=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
