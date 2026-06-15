@@ -317,7 +317,7 @@ canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;c
       <button class="tab" data-mode="speak" role="tab" aria-selected="false">♪ Speak</button>
     </div>
 
-    <input type="text" id="titleInput" class="title-input" placeholder="Title (optional)" maxlength="120">
+    <input type="text" id="titleInput" class="title-input" placeholder="Title" maxlength="120">
     <div class="panel active" id="panel-write" role="tabpanel">
       <textarea id="textInput" placeholder="What's on your mind today?"></textarea>
       <div class="write-tools">
@@ -906,7 +906,7 @@ function startTextEdit(card,e){
   if(card.querySelector('textarea'))return;
   const p=card.querySelector(e.type==='speak'?'.entry-text.transcript':'.entry-text');
   const ti=document.createElement('input');ti.type='text';ti.className='title-input';
-  ti.style.cssText='margin:0 0 10px;width:100%';ti.placeholder='Title (optional)';ti.value=e.title||'';
+  ti.style.cssText='margin:0 0 10px;width:100%';ti.placeholder='Title';ti.value=e.title||'';
   const existingTitle=card.querySelector('.entry-title');
   if(existingTitle)existingTitle.replaceWith(ti);else card.querySelector('.entry-meta').after(ti);
   const ta=document.createElement('textarea');
