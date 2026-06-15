@@ -98,7 +98,6 @@ body.zen #feed,body.zen .settings,body.zen #panel-draw,body.zen #panel-speak{dis
 body.zen .composer{border:none;background:none;box-shadow:none}
 body.zen #panel-write{padding:0}
 body.zen #textInput{
-  min-height:calc(100vh - 150px);
   font-size:1.15rem;line-height:1.7;
 }
 body.zen .zen-exit{display:flex}
@@ -145,7 +144,7 @@ h1{
 
 /* write */
 textarea{
-  width:100%;min-height:130px;resize:vertical;
+  width:100%;min-height:160px;resize:none;overflow:hidden;
   background:var(--bg);border:1px solid var(--line);border-radius:12px;
   color:var(--ink);font-family:'Karla',sans-serif;font-size:1.02rem;line-height:1.6;
   padding:14px;outline:none;
@@ -156,7 +155,7 @@ textarea::placeholder{color:#6f6585}
 /* draw */
 .write-tools{display:flex;gap:8px;margin-top:10px}
 .canvas-shell{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#1d1828;touch-action:none}
-canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
+canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;cursor:crosshair}
 .draw-tools{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
 .swatch{
   width:30px;height:30px;border-radius:50%;
@@ -278,9 +277,7 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
 }
-@media (min-width:700px){
-  canvas{height:400px}
-}
+
 :focus-visible{outline:2px solid var(--lavender);outline-offset:2px}
 </style>
 </head>
@@ -322,6 +319,7 @@ canvas{display:block;width:100%;height:320px;touch-action:none;cursor:crosshair}
         <button class="tool-btn" id="palmBtn" aria-pressed="true">Palm rest: on</button>
         <button class="tool-btn" id="eraserBtn" aria-pressed="false">Eraser</button>
         <button class="tool-btn" id="clearBtn">Clear</button>
+        <button class="tool-btn" id="moreSpaceBtn">＋ More space</button>
       </div>
     </div>
 
@@ -465,7 +463,13 @@ function tCommit(){
   tRedo=[];
   tUpdateButtons();
 }
+function autoGrowText(){
+  textInput.style.height='auto';
+  const min=document.body.classList.contains('zen')?(window.innerHeight-150):160;
+  textInput.style.height=Math.max(min,textInput.scrollHeight)+'px';
+}
 textInput.addEventListener('input',()=>{
+  autoGrowText();
   clearTimeout(draftTimer);
   draftTimer=setTimeout(()=>saveDraft('text',textInput.value),400);
   // commit a history step when the user pauses ~600ms (groups bursts of typing)
@@ -507,14 +511,34 @@ document.addEventListener('keydown',e=>{
 const canvas=$('canvas'),ctx=canvas.getContext('2d');
 let penColor='#c9b8f0',erasing=false,drawing=false,hasInk=false,last=null;
 let editingDrawId=null,editingDrawCreated=0;
+let canvasH=360;
+document.documentElement.style.setProperty('--canvas-h',canvasH+'px');
 function fitCanvas(){
   const shell=canvas.parentElement,dpr=window.devicePixelRatio||1;
-  const w=shell.clientWidth,h=canvas.clientHeight||320;
-  // preserve current drawing on resize
+  const w=shell.clientWidth,h=canvasH;
+  document.documentElement.style.setProperty('--canvas-h',h+'px');
+  const prevW=parseFloat(canvas.dataset.lw)||w;
+  const prevH=parseFloat(canvas.dataset.lh)||h;
   const snap=hasInk?canvas.toDataURL():null;
   canvas.width=w*dpr;canvas.height=h*dpr;
-  ctx.scale(dpr,dpr);ctx.lineCap='round';ctx.lineJoin='round';
-  if(snap){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,w,h);img.src=snap;}
+  ctx.setTransform(1,0,0,1,0,0);ctx.scale(dpr,dpr);
+  ctx.lineCap='round';ctx.lineJoin='round';
+  canvas.dataset.lw=w;canvas.dataset.lh=h;
+  if(snap){
+    const img=new Image();
+    img.onload=()=>{
+      // scale art by the WIDTH ratio (keeps proportions); height just adds blank room below
+      const r=w/prevW;
+      ctx.drawImage(img,0,0,w,prevH*r);
+    };
+    img.src=snap;
+  }
+}
+function growCanvas(by){
+  canvasH+=by;
+  fitCanvas(true);
+  // scroll the page so the new space is visible
+  canvas.parentElement.scrollIntoView({block:'end',behavior:'smooth'});
 }
 window.addEventListener('resize',()=>{if(mode==='draw')fitCanvas()});
 fitCanvas();
@@ -603,6 +627,8 @@ canvas.addEventListener('pointermove',e=>{
     last=p;
   }
   hasInk=true;
+  // auto-extend the page downward when drawing near the bottom
+  if(last && last.y > canvasH-60){growCanvas(280)}
 },{passive:false});
 function endStroke(e){
   if(e&&e.pointerId!==activePointerId)return;
@@ -647,6 +673,7 @@ $('palmBtn').addEventListener('click',()=>{
   toast(palmGuard?'Palm guard on — only your stylus works in Draw':'Palm guard off — finger touch works again');
 });
 
+$('moreSpaceBtn').addEventListener('click',()=>growCanvas(320));
 $('undoBtn').addEventListener('click',doUndo);
 $('redoBtn').addEventListener('click',doRedo);
 // keyboard undo/redo on Mac
@@ -738,7 +765,7 @@ $('saveBtn').addEventListener('click',async()=>{
     const txt=textInput.value.trim();
     if(!txt){toast('Nothing to save yet');return}
     await putEntry({id:uid(),type:'write',created:Date.now(),text:txt});
-    textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');
+    textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');autoGrowText();
   }
   if(mode==='draw'){
     if(!hasInk){toast('The page is blank');return}
@@ -768,7 +795,7 @@ $('saveBtn').addEventListener('click',async()=>{
 });
 $('discardBtn').addEventListener('click',()=>{
   if(!confirm('Discard this draft? It will be gone for good.'))return;
-  if(mode==='write'){textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text')}
+  if(mode==='write'){textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');autoGrowText()}
   if(mode==='draw'){ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;editingDrawId=null;clearDraft('sketch')}
   if(mode==='speak'){if(recording)stopRec();audioBlob=null;transcript='';clearDraft('voice');$('liveTranscript').textContent='Tap the orb to record.';$('liveTranscript').classList.remove('has-text');$('recTime').textContent='';$('speakHint').textContent=''}
 });
@@ -935,11 +962,12 @@ $('drawerSearch').addEventListener('input',()=>renderDrawer($('drawerSearch').va
 function enterZen(){
   document.body.classList.add('zen');
   $('zenBtn').setAttribute('aria-pressed','true');
-  textInput.focus();
+  autoGrowText();textInput.focus();
 }
 function exitZen(){
   document.body.classList.remove('zen');
   $('zenBtn').setAttribute('aria-pressed','false');
+  autoGrowText();
 }
 $('zenBtn').addEventListener('click',()=>{
   if(document.body.classList.contains('zen'))exitZen();else enterZen();
@@ -1123,6 +1151,7 @@ $('ghForget').addEventListener('click',async()=>{
   }
   textInput.value=(await loadDraftKey('text'))||'';
   tLast=textInput.value;tUndo=[];tRedo=[];tUpdateButtons();
+  autoGrowText();
   const sk=await loadDraftKey('sketch');
   if(sk){
     const img=new Image();
