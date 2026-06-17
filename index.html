@@ -923,7 +923,10 @@ function startTextEdit(card,e){
   row.appendChild(cn);row.appendChild(sv);
   if(p)p.replaceWith(ta);else card.appendChild(ta);
   ta.after(row);ta.focus();
-  cn.addEventListener('click',()=>render());
+  cn.addEventListener('click',()=>{
+    if($('entryView')&&$('entryView').classList.contains('show'))showEntryView(e);
+    else render();
+  });
   sv.addEventListener('click',async()=>{
     e.text=ta.value.trim();e.title=ti.value.trim();e.updated=Date.now();
     await putEntry(e);await markDirty(e.id);
