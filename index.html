@@ -1028,6 +1028,119 @@ $('zenBtn').addEventListener('click',()=>{
 $('zenExit').addEventListener('click',exitZen);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('zen'))exitZen()});
 
+/* ============ share an entry as an image ============ */
+function wrapLines(c,text,maxW){
+  const out=[];
+  for(const para of text.split('\n')){
+    if(para===''){out.push('');continue}
+    let line='';
+    for(const word of para.split(' ')){
+      const test=line?line+' '+word:word;
+      if(c.measureText(test).width>maxW&&line){out.push(line);line=word}
+      else line=test;
+    }
+    out.push(line);
+  }
+  return out;
+}
+async function renderEntryImage(e){
+  const W=1080, pad=72, dpr=2;
+  const title=(e.title||'').trim();
+  const bodyText=e.type==='draw'?'':(e.text||'').trim();
+  // measure height first on a temp ctx
+  const tmp=document.createElement('canvas').getContext('2d');
+  tmp.font='600 46px Fraunces, Georgia, serif';
+  const titleLines=title?wrapLines(tmp,title,W-pad*2):[];
+  tmp.font='400 38px Karla, system-ui, sans-serif';
+  const bodyLines=bodyText?wrapLines(tmp,bodyText,W-pad*2):[];
+  let drawImg=null;
+  if(e.type==='draw'&&e.image){
+    drawImg=await new Promise(r=>{const im=new Image();im.onload=()=>r(im);im.onerror=()=>r(null);im.src=URL.createObjectURL(e.image)});
+  }
+  const lineH=54, titleH=titleLines.length*64;
+  const imgH=drawImg?Math.round((W-pad*2)*(drawImg.height/drawImg.width)):0;
+  let H=pad + 44 /*tag*/ + 18 + titleH + (titleLines.length?14:0)
+        + bodyLines.length*lineH
+        + (drawImg?imgH+20:0)
+        + (e.type==='speak'?60:0)
+        + pad + 70 /*footer*/;
+  H=Math.max(H,420);
+  const cv=document.createElement('canvas');cv.width=W*dpr;cv.height=H*dpr;
+  const c=cv.getContext('2d');c.scale(dpr,dpr);
+  // background
+  c.fillStyle='#181420';c.fillRect(0,0,W,H);
+  // soft glow blobs
+  const g1=c.createRadialGradient(W*0.15,80,0,W*0.15,80,420);
+  g1.addColorStop(0,'rgba(201,184,240,.10)');g1.addColorStop(1,'transparent');c.fillStyle=g1;c.fillRect(0,0,W,H);
+  const g2=c.createRadialGradient(W*0.9,H-60,0,W*0.9,H-60,460);
+  g2.addColorStop(0,'rgba(245,184,210,.09)');g2.addColorStop(1,'transparent');c.fillStyle=g2;c.fillRect(0,0,W,H);
+  // card panel
+  function rr(x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+  rr(40,40,W-80,H-80,40);c.fillStyle='#221c2e';c.fill();
+  c.strokeStyle='#352c46';c.lineWidth=2;c.stroke();
+  let y=pad+30;
+  // tag pill
+  const tagText={write:'Written',draw:'Drawn',speak:'Spoken'}[e.type];
+  const tagCol={write:['rgba(201,184,240,.18)','#c9b8f0'],draw:['rgba(181,232,205,.16)','#b5e8cd'],speak:['rgba(245,184,210,.16)','#f5b8d2']}[e.type];
+  c.font='700 26px Karla, system-ui, sans-serif';
+  const tw=c.measureText(tagText).width;
+  rr(pad,y-30,tw+44,46,23);c.fillStyle=tagCol[0];c.fill();
+  c.fillStyle=tagCol[1];c.textBaseline='middle';c.fillText(tagText,pad+22,y-6);
+  // date on right
+  c.font='400 24px "DM Mono", monospace';c.fillStyle='#9a8fb0';c.textAlign='right';
+  c.fillText(fmt(e.created),W-pad,y-6);c.textAlign='left';c.textBaseline='alphabetic';
+  y+=46;
+  // title
+  if(titleLines.length){
+    c.font='600 46px Fraunces, Georgia, serif';c.fillStyle='#ece7f3';
+    for(const ln of titleLines){y+=58;c.fillText(ln,pad,y)}
+    y+=20;
+  }
+  // body text
+  if(bodyLines.length){
+    c.font='400 38px Karla, system-ui, sans-serif';
+    c.fillStyle=e.type==='speak'?'#9a8fb0':'#ece7f3';
+    for(const ln of bodyLines){y+=lineH;c.fillText(ln,pad,y)}
+  }
+  // drawing
+  if(drawImg){
+    y+=30;const iw=W-pad*2, ih=iw*(drawImg.height/drawImg.width);
+    rr(pad,y,iw,ih,20);c.save();c.clip();c.fillStyle='#1d1828';c.fillRect(pad,y,iw,ih);
+    c.drawImage(drawImg,pad,y,iw,ih);c.restore();
+    c.strokeStyle='#352c46';c.lineWidth=2;rr(pad,y,iw,ih,20);c.stroke();
+    y+=ih;
+  }
+  if(e.type==='speak'){y+=44;c.font='400 30px Karla, system-ui, sans-serif';c.fillStyle='#f5b8d2';c.fillText('\u266a voice note',pad,y)}
+  // footer signature
+  c.font='italic 600 30px Fraunces, Georgia, serif';
+  const grad=c.createLinearGradient(pad,0,pad+200,0);
+  grad.addColorStop(0,'#c9b8f0');grad.addColorStop(1,'#f5b8d2');
+  c.fillStyle=grad;c.fillText('Psycho \u2661',pad,H-pad+10);
+  return await new Promise(r=>cv.toBlob(r,'image/png'));
+}
+async function shareEntry(e){
+  try{
+    const blob=await renderEntryImage(e);
+    const file=new File([blob],'psycho-entry.png',{type:'image/png'});
+    const files=[file];
+    if(e.type==='speak'&&e.audio){
+      const ext=(e.audio.type||'').includes('mp4')?'m4a':'webm';
+      files.push(new File([e.audio],'voice.'+ext,{type:e.audio.type||'audio/webm'}));
+    }
+    if(navigator.canShare&&navigator.canShare({files})){
+      await navigator.share({files,title:e.title||'Psycho entry'});
+    }else{
+      // fallback: download the image
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+      a.download=(e.title||'psycho-entry')+'.png';a.click();
+      toast('Saved image to share');
+    }
+  }catch(err){
+    if(err&&err.name==='AbortError')return; // user cancelled the share sheet
+    toast('Couldn\u2019t share that entry');
+  }
+}
+
 /* ============ single entry viewer ============ */
 function showEntryView(e){
   let ov=$('entryView');
@@ -1051,6 +1164,9 @@ function showEntryView(e){
     const ed=document.createElement('button');ed.className='entry-del';ed.textContent='edit';ed.style.marginRight='12px';
     ed.addEventListener('click',()=>{$('entryView').classList.remove('show');editDrawing(e)});meta.appendChild(ed);
   }
+  const sh=document.createElement('button');sh.className='entry-del';sh.textContent='share';sh.style.marginRight='12px';sh.style.color='var(--lavender)';
+  sh.addEventListener('click',()=>shareEntry(e));
+  meta.appendChild(sh);
   const del=document.createElement('button');del.className='entry-del';del.textContent='remove';
   del.addEventListener('click',async()=>{
     const removed={...e};await delEntry(e.id);
