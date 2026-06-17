@@ -476,6 +476,24 @@ document.querySelectorAll('.tab').forEach(b=>{
 /* ============ write (with autosaved draft) ============ */
 const textInput=$('textInput'),titleInput=$('titleInput');
 let draftTimer;
+titleInput.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    // commit the title draft immediately
+    saveDraft('title',titleInput.value);
+    if(mode==='write'){
+      // move into the writing area (slight delay helps iPad keep the keyboard up for the textarea)
+      setTimeout(()=>{textInput.focus();
+        // place cursor at end
+        const v=textInput.value;textInput.value='';textInput.value=v;
+      },10);
+    }else{
+      // draw / speak: dismiss the keyboard
+      titleInput.blur();
+      if(document.activeElement)document.activeElement.blur();
+    }
+  }
+});
 titleInput.addEventListener('input',()=>{
   clearTimeout(draftTimer);
   draftTimer=setTimeout(()=>{saveDraft('text',textInput.value);saveDraft('title',titleInput.value)},400);
