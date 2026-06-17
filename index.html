@@ -682,16 +682,19 @@ function persistSketch(){
 let palmGuard=true;
 function guardActive(){return palmGuard&&mode==='draw'}
 function updateGuardClass(){document.body.classList.toggle('no-touch-select',guardActive())}
+function isInteractive(t){
+  return t && t.closest && t.closest('button,input,textarea,select,a,.tool-btn,.swatch,.title-input');
+}
 function blockTouchPointer(e){
   if(!guardActive())return;
-  if(e.target&&e.target.id==='palmBtn')return;
+  if(isInteractive(e.target))return;        // let finger use the tools, title, etc.
   if(e.pointerType==='touch'){e.preventDefault();e.stopPropagation()}
 }
 ['pointerdown','pointermove','pointerup'].forEach(ev=>
   document.addEventListener(ev,blockTouchPointer,{capture:true,passive:false}));
 function blockTouchEvt(e){
   if(!guardActive())return;
-  if(e.target&&e.target.id==='palmBtn')return;
+  if(isInteractive(e.target))return;
   e.preventDefault();
 }
 document.addEventListener('touchstart',blockTouchEvt,{capture:true,passive:false});
