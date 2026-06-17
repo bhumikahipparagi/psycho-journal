@@ -857,7 +857,7 @@ async function render(){
     const card=document.createElement('article');card.className='entry';card.dataset.entry=e.id;
     const tape=document.createElement('div');tape.className='tape '+e.type;card.appendChild(tape);
     const meta=document.createElement('div');meta.className='entry-meta';
-    meta.innerHTML='<span class="entry-time">'+fmt(e.created)+(e.updated?' · edited':'')+'</span>';
+    meta.innerHTML='<span class="entry-time">'+fmt(e.created)+'</span>';
     if(e.type==='write'||e.type==='speak'){
       const ed=document.createElement('button');ed.className='entry-del';ed.textContent='edit';ed.style.marginRight='12px';
       ed.addEventListener('click',()=>startTextEdit(card,e));
@@ -910,8 +910,12 @@ function startTextEdit(card,e){
   const existingTitle=card.querySelector('.entry-title');
   if(existingTitle)existingTitle.replaceWith(ti);else card.querySelector('.entry-meta').after(ti);
   const ta=document.createElement('textarea');
-  ta.value=e.text||'';ta.style.minHeight='90px';
+  ta.value=e.text||'';
+  ta.style.cssText='min-height:120px;max-height:60vh;overflow-y:auto;resize:vertical';
   ta.placeholder=e.type==='speak'?'Transcript…':'Your entry…';
+  const grow=()=>{ta.style.height='auto';ta.style.height=Math.min(window.innerHeight*0.6,ta.scrollHeight)+'px'};
+  ta.addEventListener('input',grow);
+  setTimeout(grow,0);
   const row=document.createElement('div');
   row.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:10px';
   const cn=document.createElement('button');cn.className='tool-btn';cn.textContent='Cancel';
@@ -967,7 +971,7 @@ async function renderDrawer(filter){
     const labels={write:'Written',draw:'Drawn',speak:'Spoken'};
     const item=document.createElement('button');item.className='drawer-item';
     item.innerHTML='<span class="di-top"><span class="tag '+e.type+'">'+labels[e.type]+'</span>'+
-      '<span class="di-when">'+fmt(e.created)+(e.updated?' · edited':'')+'</span></span>'+
+      '<span class="di-when">'+fmt(e.created)+'</span></span>'+
       '<span class="di-prev"></span>';
     item.querySelector('.di-prev').textContent=previewText(e);
     item.addEventListener('click',()=>{openEntryFromDrawer(e.id)});
@@ -1035,7 +1039,7 @@ function showEntryView(e){
   const card=document.createElement('article');card.className='entry';card.dataset.entry=e.id;
   const tape=document.createElement('div');tape.className='tape '+e.type;card.appendChild(tape);
   const meta=document.createElement('div');meta.className='entry-meta';
-  meta.innerHTML='<span class="entry-time">'+fmt(e.created)+(e.updated?' · edited':'')+'</span>';
+  meta.innerHTML='<span class="entry-time">'+fmt(e.created)+'</span>';
   if(e.type==='write'||e.type==='speak'){
     const ed=document.createElement('button');ed.className='entry-del';ed.textContent='edit';ed.style.marginRight='12px';
     ed.addEventListener('click',()=>startTextEdit(card,e));meta.appendChild(ed);
