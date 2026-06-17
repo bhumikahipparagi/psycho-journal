@@ -1118,10 +1118,49 @@ async function renderEntryImage(e){
   c.fillStyle=grad;c.fillText('Psycho \u2661',pad,H-pad+10);
   return await new Promise(r=>cv.toBlob(r,'image/png'));
 }
+// Build a single-page PDF that embeds the PNG at full resolution (sharp, vector-wrapped raster).
+async function pngToPdf(pngBlob,pxW,pxH){
+  const bytes=new Uint8Array(await pngBlob.arrayBuffer());
+  // page sized so the image maps 1:1 at 72dpi-equivalent points (scaled down for sane page size)
+  const scale=72/144; // image rendered at ~144dpi → half-size in points keeps it crisp
+  const pw=(pxW*scale).toFixed(2), ph=(pxH*scale).toFixed(2);
+  const enc=s=>new TextEncoder().encode(s);
+  const parts=[]; let len=0; const offsets=[];
+  const push=u8=>{parts.push(u8);len+=u8.length};
+  push(enc('%PDF-1.4\n'));
+  function obj(n,body){offsets[n]=len;push(enc(n+' 0 obj\n'));push(typeof body==='string'?enc(body):body)}
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  obj(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+  obj(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pw+' '+ph+'] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>\nendobj\n');
+  const stream='q\n'+pw+' 0 0 '+ph+' 0 0 cm\n/Im0 Do\nQ\n';
+  obj(4,'<< /Length '+stream.length+' >>\nstream\n'+stream+'endstream\nendobj\n');
+  // image XObject — embed PNG via /DCTDecode won't work for PNG; use a raw approach: re-encode as JPEG is lossy.
+  // Instead embed as a PNG using FlateDecode is complex; simplest robust path: embed JPEG at high quality.
+  // (handled by caller passing a JPEG blob)
+  offsets[5]=len;
+  push(enc('5 0 obj\n<< /Type /XObject /Subtype /Image /Width '+pxW+' /Height '+pxH+
+    ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+bytes.length+' >>\nstream\n'));
+  push(bytes);
+  push(enc('\nendstream\nendobj\n'));
+  const xref=len;
+  let x='xref\n0 6\n0000000000 65535 f \n';
+  for(let i=1;i<=5;i++)x+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+  push(enc(x));
+  push(enc('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF'));
+  return new Blob(parts,{type:'application/pdf'});
+}
 async function shareEntry(e){
   try{
-    const blob=await renderEntryImage(e);
-    const file=new File([blob],'psycho-entry.png',{type:'image/png'});
+    // render the card, then convert to high-quality JPEG for clean PDF embedding
+    const pngBlob=await renderEntryImage(e);
+    const dims=await new Promise(r=>{const im=new Image();im.onload=()=>r({w:im.naturalWidth,h:im.naturalHeight,im});im.src=URL.createObjectURL(pngBlob)});
+    const oc=document.createElement('canvas');oc.width=dims.w;oc.height=dims.h;
+    const octx=oc.getContext('2d');octx.fillStyle='#181420';octx.fillRect(0,0,dims.w,dims.h);
+    octx.drawImage(dims.im,0,0);
+    const jpgBlob=await new Promise(r=>oc.toBlob(r,'image/jpeg',0.96));
+    const pdf=await pngToPdf(jpgBlob,dims.w,dims.h);
+    const fname=((e.title||'psycho-entry').replace(/[^\w\- ]+/g,'').trim()||'psycho-entry')+'.pdf';
+    const file=new File([pdf],fname,{type:'application/pdf'});
     const files=[file];
     if(e.type==='speak'&&e.audio){
       const ext=(e.audio.type||'').includes('mp4')?'m4a':'webm';
@@ -1130,13 +1169,11 @@ async function shareEntry(e){
     if(navigator.canShare&&navigator.canShare({files})){
       await navigator.share({files,title:e.title||'Psycho entry'});
     }else{
-      // fallback: download the image
-      const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-      a.download=(e.title||'psycho-entry')+'.png';a.click();
-      toast('Saved image to share');
+      const a=document.createElement('a');a.href=URL.createObjectURL(pdf);a.download=fname;a.click();
+      toast('PDF saved to share');
     }
   }catch(err){
-    if(err&&err.name==='AbortError')return; // user cancelled the share sheet
+    if(err&&err.name==='AbortError')return;
     toast('Couldn\u2019t share that entry');
   }
 }
