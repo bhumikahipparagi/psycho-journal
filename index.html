@@ -150,10 +150,10 @@ h1{
 
 /* write */
 textarea{
-  width:100%;min-height:160px;resize:none;overflow:hidden;
+  width:100%;min-height:160px;max-height:52vh;resize:none;overflow-y:auto;
   background:var(--bg);border:1px solid var(--line);border-radius:12px;
   color:var(--ink);font-family:'Karla',sans-serif;font-size:1.02rem;line-height:1.6;
-  padding:14px;outline:none;
+  padding:14px;outline:none;-webkit-overflow-scrolling:touch;
 }
 textarea:focus{border-color:var(--lavender)}
 textarea::placeholder{color:#6f6585}
@@ -169,7 +169,7 @@ textarea::placeholder{color:#6f6585}
 .title-input::placeholder{color:#6f6585;font-style:italic}
 .title-input:focus{border-color:var(--lavender)}
 body.zen .title-input{margin:0 0 10px;width:100%;font-size:1.5rem}
-.canvas-shell{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#1d1828;touch-action:none}
+.canvas-shell{position:relative;border-radius:12px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);background:#1d1828;touch-action:pan-y;max-height:56vh;-webkit-overflow-scrolling:touch}
 canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;cursor:crosshair}
 .draw-tools{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
 .swatch{
@@ -513,9 +513,18 @@ function tCommit(){
   tUpdateButtons();
 }
 function autoGrowText(){
+  const zen=document.body.classList.contains('zen');
+  const min=zen?(window.innerHeight-200):160;
+  const cap=zen?(window.innerHeight-200):Math.round(window.innerHeight*0.52);
   textInput.style.height='auto';
-  const min=document.body.classList.contains('zen')?(window.innerHeight-180):160;
-  textInput.style.height=Math.max(min,textInput.scrollHeight)+'px';
+  const target=Math.max(min,textInput.scrollHeight);
+  if(target<=cap){
+    textInput.style.height=target+'px';
+    textInput.style.overflowY='hidden';
+  }else{
+    textInput.style.height=cap+'px';
+    textInput.style.overflowY='auto';   // scroll inside once it hits the cap
+  }
 }
 textInput.addEventListener('input',()=>{
   autoGrowText();
@@ -586,8 +595,9 @@ function fitCanvas(){
 function growCanvas(by){
   canvasH+=by;
   fitCanvas(true);
-  // scroll the page so the new space is visible
-  canvas.parentElement.scrollIntoView({block:'end',behavior:'smooth'});
+  // scroll the canvas viewport itself down so the new space is visible, keeping tools on screen
+  const shell=canvas.parentElement;
+  shell.scrollTo({top:shell.scrollHeight,behavior:'smooth'});
 }
 window.addEventListener('resize',()=>{if(mode==='draw')fitCanvas()});
 fitCanvas();
@@ -676,8 +686,11 @@ canvas.addEventListener('pointermove',e=>{
     last=p;
   }
   hasInk=true;
-  // auto-extend the page downward when drawing near the bottom
-  if(last && last.y > canvasH-60){growCanvas(280)}
+  // auto-extend downward when drawing near the bottom — grow silently, don't yank the view mid-stroke
+  if(last && last.y > canvasH-80){
+    canvasH+=300;
+    fitCanvas(true);
+  }
 },{passive:false});
 function endStroke(e){
   if(e&&e.pointerId!==activePointerId)return;
@@ -703,9 +716,13 @@ function updateGuardClass(){document.body.classList.toggle('no-touch-select',gua
 function isInteractive(t){
   return t && t.closest && t.closest('button,input,textarea,select,a,.tool-btn,.swatch,.title-input');
 }
+function isScrollable(t){
+  return t && t.closest && t.closest('.canvas-shell,.drawer-list,.entry-view');
+}
 function blockTouchPointer(e){
   if(!guardActive())return;
   if(isInteractive(e.target))return;        // let finger use the tools, title, etc.
+  if(isScrollable(e.target))return;         // let finger scroll the canvas viewport
   if(e.pointerType==='touch'){e.preventDefault();e.stopPropagation()}
 }
 ['pointerdown','pointermove','pointerup'].forEach(ev=>
@@ -713,6 +730,7 @@ function blockTouchPointer(e){
 function blockTouchEvt(e){
   if(!guardActive())return;
   if(isInteractive(e.target))return;
+  if(isScrollable(e.target))return;         // allow scrolling the canvas viewport
   e.preventDefault();
 }
 document.addEventListener('touchstart',blockTouchEvt,{capture:true,passive:false});
