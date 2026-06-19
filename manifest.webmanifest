@@ -1,6 +1,6 @@
 {
-  "name": "Psycho Journal",
-  "short_name": "Psycho",
+  "name": "Hey You",
+  "short_name": "Hey You",
   "description": "A soft, dark journal for writing, drawing, and speaking.",
   "start_url": "./index.html",
   "scope": "./",

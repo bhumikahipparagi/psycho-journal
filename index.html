@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>Psycho — your journal</title>
+<title>Hey You — your journal</title>
 <meta name="description" content="A soft, dark journal for writing, drawing, and speaking.">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#181420">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Psycho">
+<meta name="apple-mobile-web-app-title" content="Hey You">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -305,7 +305,7 @@ canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;c
 <div class="wrap">
   <header>
     <button class="menu-btn" id="menuBtn" aria-label="Open past entries">☰</button>
-    <h1>Psycho</h1>
+    <h1>Hey You</h1>
     <button class="menu-btn" id="topGear" aria-label="Sync settings" style="font-size:1.15rem">⚙</button>
   </header>
   <div class="date-strip"><span class="date-today" id="todayLabel"></span></div>
@@ -1206,7 +1206,7 @@ async function shareEntry(e){
       files.push(new File([e.audio],'voice.'+ext,{type:e.audio.type||'audio/webm'}));
     }
     if(navigator.canShare&&navigator.canShare({files})){
-      await navigator.share({files,title:e.title||'Psycho entry'});
+      await navigator.share({files,title:e.title||'Hey You entry'});
     }else{
       const a=document.createElement('a');a.href=URL.createObjectURL(pdf);a.download=fname;a.click();
       toast('PDF saved to share');

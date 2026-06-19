@@ -1,4 +1,4 @@
-# Psycho 🌙 — your journal
+# Hey You 🌙 — your journal
 
 A soft, dark, pastel journaling app that works on **macOS, iPad, and iPhone** as an installable web app (PWA). Write, draw with your stylus, or speak — voice notes are saved as audio *and* transcribed live.
 
