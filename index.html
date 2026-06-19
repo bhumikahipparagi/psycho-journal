@@ -772,7 +772,7 @@ $('clearBtn').addEventListener('click',()=>{
 });
 
 /* ============ speak ============ */
-let mediaRecorder,chunks=[],recStart,recTimer,recording=false,audioBlob=null,transcript='',recog=null;
+let mediaRecorder,chunks=[],recStart,recTimer,recording=false,audioBlob=null,transcript='',recog=null,activeStream=null,pendingSave=null;
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(!SR) $('speakHint').textContent='Live transcription isn\u2019t available in this browser — your voice note will still be saved.';
 
@@ -780,53 +780,75 @@ $('micBtn').addEventListener('click',async()=>{
   if(recording){stopRec();return}
   try{
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    const mime=MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':
-               MediaRecorder.isTypeSupported('audio/webm')?'audio/webm':'';
-    mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+    // pick the most compatible recordable format this device supports
+    let mime='';
+    const prefs=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm','audio/ogg'];
+    for(const p of prefs){ if(window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(p)){mime=p;break} }
+    try{ mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined); }
+    catch(_){ mediaRecorder=new MediaRecorder(stream); }
     chunks=[];audioBlob=null;transcript='';
+    activeStream=stream;
     mediaRecorder.ondataavailable=e=>{
-      if(e.data.size)chunks.push(e.data);
-      if(db&&chunks.length)saveDraft('voice',{chunks:[...chunks],transcript,mime:mediaRecorder.mimeType||'audio/webm'});
+      if(e.data&&e.data.size){chunks.push(e.data);
+        if(db)saveDraft('voice',{chunks:[...chunks],transcript,mime:mediaRecorder.mimeType||mime||'audio/mp4'});
+      }
     };
     mediaRecorder.onstop=()=>{
-      audioBlob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'});
-      stream.getTracks().forEach(t=>t.stop());
+      audioBlob=new Blob(chunks,{type:mediaRecorder.mimeType||mime||'audio/mp4'});
+      try{stream.getTracks().forEach(t=>t.stop())}catch(_){}
+      activeStream=null;
+      if(pendingSave){pendingSave();pendingSave=null}
     };
-    mediaRecorder.start(1000); // collect every second so nothing is lost
+    mediaRecorder.start(1000); // emit a chunk every second so nothing is lost
     recording=true;recStart=Date.now();
     $('micBtn').classList.add('recording');
     $('micBtn').setAttribute('aria-label','Stop recording');
+    $('speakHint').textContent='';
     recTimer=setInterval(()=>{
       const s=Math.floor((Date.now()-recStart)/1000);
       $('recTime').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
     },300);
+    // transcription is best-effort and must NEVER block recording
     if(SR){
-      recog=new SR();recog.continuous=true;recog.interimResults=true;
-      recog.onresult=e=>{
-        let interim='';
-        for(let i=e.resultIndex;i<e.results.length;i++){
-          if(e.results[i].isFinal) transcript+=e.results[i][0].transcript+' ';
-          else interim+=e.results[i][0].transcript;
-        }
-        const el=$('liveTranscript');
-        el.textContent=(transcript+interim)||'Listening…';
-        el.classList.add('has-text');
-      };
-      recog.onerror=()=>{};
-      try{recog.start()}catch(_){}
+      try{
+        recog=new SR();recog.continuous=true;recog.interimResults=true;
+        recog.onresult=e=>{
+          let interim='';
+          for(let i=e.resultIndex;i<e.results.length;i++){
+            if(e.results[i].isFinal) transcript+=e.results[i][0].transcript+' ';
+            else interim+=e.results[i][0].transcript;
+          }
+          const el=$('liveTranscript');
+          el.textContent=(transcript+interim)||'Listening…';
+          el.classList.add('has-text');
+        };
+        recog.onerror=ev=>{
+          // common on iOS — recording still works, just no live text
+          $('liveTranscript').textContent='Recording… (live transcript unavailable, voice is saving)';
+        };
+        recog.start();
+      }catch(_){
+        $('liveTranscript').textContent='Recording… (voice saving)';
+      }
     } else {
-      $('liveTranscript').textContent='Recording… (voice saved, no live transcript here)';
+      $('liveTranscript').textContent='Recording… (voice saving — transcription not supported on this browser)';
     }
   }catch(err){
-    toast('Microphone permission needed');
+    // mic unavailable — most often another app (a call) holds it, or permission denied
+    let msg='Couldn\u2019t access the microphone.';
+    if(err&&(err.name==='NotAllowedError'||err.name==='SecurityError')) msg='Microphone permission is off — enable it in Settings.';
+    else if(err&&(err.name==='NotReadableError'||err.name==='AbortError')) msg='Mic is busy — another app (like a call) is using it. End/leave that call and try again.';
+    else if(err&&err.name==='NotFoundError') msg='No microphone found on this device.';
+    $('speakHint').textContent=msg;
+    toast(msg);
   }
 });
 function stopRec(){
   recording=false;clearInterval(recTimer);
   $('micBtn').classList.remove('recording');
   $('micBtn').setAttribute('aria-label','Start recording');
-  if(mediaRecorder&&mediaRecorder.state!=='inactive')mediaRecorder.stop();
-  if(recog){try{recog.stop()}catch(_){}}
+  if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop()}catch(_){}}
+  if(recog){try{recog.stop()}catch(_){}recog=null;}
 }
 
 /* ============ save / discard ============ */
@@ -850,12 +872,25 @@ $('saveBtn').addEventListener('click',async()=>{
     ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;undoStack=[];redoStack=[];updateUndoButtons();clearDraft('sketch');
   }
   if(mode==='speak'){
-    if(recording)stopRec();
-    // give onstop a beat to assemble the blob
-    await new Promise(r=>setTimeout(r,350));
+    // If still recording, stop and WAIT for the blob to actually assemble (onstop), no fixed-delay guessing.
+    if(recording){
+      await new Promise(resolve=>{
+        pendingSave=resolve;
+        stopRec();
+        // safety net: if onstop never fires, resolve after 4s using whatever chunks we have
+        setTimeout(()=>{
+          if(pendingSave){
+            if(chunks.length&&!audioBlob){audioBlob=new Blob(chunks,{type:(mediaRecorder&&mediaRecorder.mimeType)||'audio/mp4'})}
+            pendingSave=null;resolve();
+          }
+        },4000);
+      });
+    }
+    // last-resort: assemble from chunks if the blob somehow isn't ready
+    if(!audioBlob&&chunks.length){audioBlob=new Blob(chunks,{type:(mediaRecorder&&mediaRecorder.mimeType)||'audio/mp4'})}
     if(!audioBlob){toast('Record something first');return}
     await putEntry({id:uid(),type:'speak',created:Date.now(),audio:audioBlob,text:transcript.trim(),title:titleInput.value.trim()});
-    audioBlob=null;transcript='';clearDraft('voice');$('speakHint').textContent='';
+    audioBlob=null;transcript='';chunks=[];clearDraft('voice');$('speakHint').textContent='';
     $('liveTranscript').textContent='Tap the orb to record.';
     $('liveTranscript').classList.remove('has-text');
     $('recTime').textContent='';
@@ -1202,8 +1237,9 @@ async function shareEntry(e){
     const file=new File([pdf],fname,{type:'application/pdf'});
     const files=[file];
     if(e.type==='speak'&&e.audio){
-      const ext=(e.audio.type||'').includes('mp4')?'m4a':'webm';
-      files.push(new File([e.audio],'voice.'+ext,{type:e.audio.type||'audio/webm'}));
+      const t=(e.audio.type||'');
+      const ext=t.includes('mp4')||t.includes('aac')||t.includes('m4a')?'m4a':t.includes('ogg')?'ogg':'webm';
+      files.push(new File([e.audio],'voice.'+ext,{type:e.audio.type||'audio/mp4'}));
     }
     if(navigator.canShare&&navigator.canShare({files})){
       await navigator.share({files,title:e.title||'Hey You entry'});
