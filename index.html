@@ -891,13 +891,33 @@ async function saveMediaDraft(){
 }
 $('attachBtn').addEventListener('click',()=>$('attachInput').click());
 $('attachInput').addEventListener('change',async e=>{
+  const HARD=38*1024*1024;   // ~38MB: GitHub sync rejects files near this
+  const SOFT=5*1024*1024;    // ~5MB: still syncs, but heavy
+  let added=0, blocked=[], heavy=[];
   for(const f of e.target.files){
+    if(f.size>HARD){blocked.push(f.name+' ('+fmtSize(f.size)+')');continue}
+    if(f.size>SOFT)heavy.push(f.name);
     const kind=f.type.startsWith('video')?'video':'image';
     pendingMedia.push({blob:f,kind,url:URL.createObjectURL(f)});
+    added++;
   }
   renderAttachPreviews();saveMediaDraft();
   e.target.value='';
+  if(blocked.length){
+    alert('Too large to sync across devices (over '+fmtSize(HARD)+'):\n\n'+blocked.join('\n')+
+      '\n\nThese were not added. Try a shorter clip or compress the video first.');
+  }
+  if(heavy.length){
+    toast(heavy.length+(heavy.length>1?' large files':' large file')+' added — may slow sync');
+  }else if(added){
+    toast(added+(added>1?' attachments added':' attachment added'));
+  }
 });
+function fmtSize(b){
+  if(b>=1024*1024)return (b/1024/1024).toFixed(1)+' MB';
+  if(b>=1024)return Math.round(b/1024)+' KB';
+  return b+' B';
+}
 
 /* ============ save / discard ============ */
 $('saveBtn').addEventListener('click',async()=>{
