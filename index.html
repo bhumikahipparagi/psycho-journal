@@ -1202,11 +1202,23 @@ async function renderEntryImage(e){
   if(e.type==='draw'&&e.image){
     drawImg=await new Promise(r=>{const im=new Image();im.onload=()=>r(im);im.onerror=()=>r(null);im.src=URL.createObjectURL(e.image)});
   }
+  // attached photos (videos can't go in a static PDF, so skip them)
+  const mediaImgs=[];
+  if(e.media&&e.media.length){
+    for(const m of e.media){
+      if(m.kind==='video'||!m.blob)continue;
+      const im=await new Promise(r=>{const x=new Image();x.onload=()=>r(x);x.onerror=()=>r(null);x.src=URL.createObjectURL(m.blob)});
+      if(im)mediaImgs.push(im);
+    }
+  }
   const lineH=54, titleH=titleLines.length*64;
   const imgH=drawImg?Math.round((W-pad*2)*(drawImg.height/drawImg.width)):0;
+  let mediaH=0;
+  for(const im of mediaImgs){mediaH+=Math.round((W-pad*2)*(im.height/im.width))+16}
   let H=pad + 44 /*tag*/ + 18 + titleH + (titleLines.length?14:0)
         + bodyLines.length*lineH
         + (drawImg?imgH+20:0)
+        + mediaH
         + (e.type==='speak'?60:0)
         + pad + 70 /*footer*/;
   H=Math.max(H,420);
@@ -1256,6 +1268,14 @@ async function renderEntryImage(e){
     y+=ih;
   }
   if(e.type==='speak'){y+=44;c.font='400 30px Karla, system-ui, sans-serif';c.fillStyle='#f5b8d2';c.fillText('\u266a voice note',pad,y)}
+  // attached photos
+  for(const im of mediaImgs){
+    y+=16;const iw=W-pad*2, ih=iw*(im.height/im.width);
+    rr(pad,y,iw,ih,20);c.save();c.clip();c.fillStyle='#1d1828';c.fillRect(pad,y,iw,ih);
+    c.drawImage(im,pad,y,iw,ih);c.restore();
+    c.strokeStyle='#352c46';c.lineWidth=2;rr(pad,y,iw,ih,20);c.stroke();
+    y+=ih;
+  }
   // footer signature
   c.font='italic 600 30px Fraunces, Georgia, serif';
   const grad=c.createLinearGradient(pad,0,pad+200,0);
