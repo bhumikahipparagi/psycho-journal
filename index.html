@@ -211,6 +211,15 @@ canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;c
 .speak-hint{font-size:.8rem;color:var(--ink-dim);text-align:center}
 
 /* save row */
+.attach-row{padding:0 16px 6px}
+.attach-previews{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px;margin-bottom:4px}
+.attach-previews:empty{margin:0}
+.att-thumb{position:relative;width:74px;height:74px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#1d1828}
+.att-thumb img,.att-thumb video{width:100%;height:100%;object-fit:cover}
+.att-thumb .att-x{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(20,16,28,.8);color:#fff;font-size:.7rem;cursor:pointer;line-height:1}
+.att-thumb .att-vid{position:absolute;bottom:2px;left:3px;font-size:.6rem;color:#fff;text-shadow:0 1px 2px #000}
+.entry .entry-media{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.entry .entry-media img,.entry .entry-media video{width:100%;border-radius:12px;border:1px solid var(--line);background:#1d1828}
 .save-row{display:flex;justify-content:flex-end;gap:10px;padding:0 16px 16px}
 .btn-save{
   background:linear-gradient(110deg,var(--lavender),var(--blossom));
@@ -355,6 +364,12 @@ canvas{display:block;width:100%;height:var(--canvas-h,360px);touch-action:none;c
         <p class="speak-hint" id="speakHint"></p>
       </div>
     </div>
+
+    <div class="attach-row" id="attachRow">
+      <button class="tool-btn" id="attachBtn">＋ Add photo / video</button>
+      <input type="file" id="attachInput" accept="image/*,video/*" multiple hidden>
+    </div>
+    <div class="attach-previews" id="attachPreviews"></div>
 
     <div class="save-row">
       <button class="btn-ghost" id="discardBtn">Discard</button>
@@ -851,23 +866,56 @@ function stopRec(){
   if(recog){try{recog.stop()}catch(_){}recog=null;}
 }
 
+/* ============ media attachments ============ */
+let pendingMedia=[]; // {blob, kind:'image'|'video', url}
+function renderAttachPreviews(){
+  const box=$('attachPreviews');box.innerHTML='';
+  pendingMedia.forEach((m,i)=>{
+    const t=document.createElement('div');t.className='att-thumb';
+    if(m.kind==='video'){
+      t.innerHTML='<video muted playsinline></video><span class="att-vid">▶ video</span><button class="att-x" aria-label="Remove">✕</button>';
+      t.querySelector('video').src=m.url;
+    }else{
+      t.innerHTML='<img alt="attachment"><button class="att-x" aria-label="Remove">✕</button>';
+      t.querySelector('img').src=m.url;
+    }
+    t.querySelector('.att-x').addEventListener('click',()=>{pendingMedia.splice(i,1);renderAttachPreviews();saveMediaDraft()});
+    box.appendChild(t);
+  });
+}
+async function saveMediaDraft(){
+  // persist pending attachments so they survive a background/close
+  const arr=[];
+  for(const m of pendingMedia){arr.push({b64:await blobToB64(m.blob),kind:m.kind})}
+  saveDraft('media',arr);
+}
+$('attachBtn').addEventListener('click',()=>$('attachInput').click());
+$('attachInput').addEventListener('change',async e=>{
+  for(const f of e.target.files){
+    const kind=f.type.startsWith('video')?'video':'image';
+    pendingMedia.push({blob:f,kind,url:URL.createObjectURL(f)});
+  }
+  renderAttachPreviews();saveMediaDraft();
+  e.target.value='';
+});
+
 /* ============ save / discard ============ */
 $('saveBtn').addEventListener('click',async()=>{
   if(mode==='write'){
     const txt=textInput.value.trim();
     if(!txt){toast('Nothing to save yet');return}
-    await putEntry({id:uid(),type:'write',created:Date.now(),text:txt,title:titleInput.value.trim()});
+    await putEntry({id:uid(),type:'write',created:Date.now(),text:txt,title:titleInput.value.trim(),media:pendingMedia.map(m=>({blob:m.blob,kind:m.kind}))});
     textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');autoGrowText();
   }
   if(mode==='draw'){
     if(!hasInk){toast('The page is blank');return}
     const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));
     if(editingDrawId){
-      await putEntry({id:editingDrawId,type:'draw',created:editingDrawCreated,updated:Date.now(),image:blob,title:titleInput.value.trim()});
+      await putEntry({id:editingDrawId,type:'draw',created:editingDrawCreated,updated:Date.now(),image:blob,title:titleInput.value.trim(),media:pendingMedia.map(m=>({blob:m.blob,kind:m.kind}))});
       await markDirty(editingDrawId);
       editingDrawId=null;
     }else{
-      await putEntry({id:uid(),type:'draw',created:Date.now(),image:blob,title:titleInput.value.trim()});
+      await putEntry({id:uid(),type:'draw',created:Date.now(),image:blob,title:titleInput.value.trim(),media:pendingMedia.map(m=>({blob:m.blob,kind:m.kind}))});
     }
     ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;undoStack=[];redoStack=[];updateUndoButtons();clearDraft('sketch');
   }
@@ -889,19 +937,21 @@ $('saveBtn').addEventListener('click',async()=>{
     // last-resort: assemble from chunks if the blob somehow isn't ready
     if(!audioBlob&&chunks.length){audioBlob=new Blob(chunks,{type:(mediaRecorder&&mediaRecorder.mimeType)||'audio/mp4'})}
     if(!audioBlob){toast('Record something first');return}
-    await putEntry({id:uid(),type:'speak',created:Date.now(),audio:audioBlob,text:transcript.trim(),title:titleInput.value.trim()});
+    await putEntry({id:uid(),type:'speak',created:Date.now(),audio:audioBlob,text:transcript.trim(),title:titleInput.value.trim(),media:pendingMedia.map(m=>({blob:m.blob,kind:m.kind}))});
     audioBlob=null;transcript='';chunks=[];clearDraft('voice');$('speakHint').textContent='';
     $('liveTranscript').textContent='Tap the orb to record.';
     $('liveTranscript').classList.remove('has-text');
     $('recTime').textContent='';
   }
   titleInput.value='';clearDraft('title');
+  pendingMedia=[];renderAttachPreviews();clearDraft('media');
   autoGrowText();
   toast('Saved ♡');
   render();maybeSync();
 });
 $('discardBtn').addEventListener('click',()=>{
   if(!confirm('Discard this draft? It will be gone for good.'))return;
+  pendingMedia=[];renderAttachPreviews();clearDraft('media');
   if(mode==='write'){textInput.value='';tLast='';tUndo=[];tRedo=[];tUpdateButtons();clearDraft('text');titleInput.value='';clearDraft('title');autoGrowText()}
   if(mode==='draw'){ctx.clearRect(0,0,canvas.width,canvas.height);hasInk=false;editingDrawId=null;clearDraft('sketch')}
   if(mode==='speak'){if(recording)stopRec();audioBlob=null;transcript='';clearDraft('voice');$('liveTranscript').textContent='Tap the orb to record.';$('liveTranscript').classList.remove('has-text');$('recTime').textContent='';$('speakHint').textContent=''}
@@ -1027,7 +1077,8 @@ function editDrawing(e){
 
 /* ============ sidebar drawer of past entries ============ */
 function previewText(e){
-  if(e.title&&e.title.trim())return e.title.trim();
+  const m=(e.media&&e.media.length)?' \u25a3':'';
+  if(e.title&&e.title.trim())return e.title.trim()+m;
   if(e.type==='write')return (e.text||'').slice(0,80)||'(empty note)';
   if(e.type==='speak')return '♪ '+((e.text||'').slice(0,72)||'voice note');
   if(e.type==='draw')return '✐ drawing';
@@ -1298,6 +1349,15 @@ function showEntryView(e){
     if(e.audio){const a=document.createElement('audio');a.controls=true;a.src=URL.createObjectURL(e.audio);card.appendChild(a)}
     if(e.text){const p=document.createElement('p');p.className='entry-text transcript';p.textContent=e.text;card.appendChild(p)}
   }
+  if(e.media&&e.media.length){
+    const mw=document.createElement('div');mw.className='entry-media';
+    for(const m of e.media){
+      if(!m.blob)continue;
+      if(m.kind==='video'){const v=document.createElement('video');v.controls=true;v.playsInline=true;v.src=URL.createObjectURL(m.blob);mw.appendChild(v)}
+      else{const im=document.createElement('img');im.alt='attachment';im.src=URL.createObjectURL(m.blob);mw.appendChild(im)}
+    }
+    card.appendChild(mw);
+  }
   body.appendChild(card);
   ov.classList.add('show');
 }
@@ -1373,12 +1433,21 @@ async function entryToJSON(e){
   if(e.updated)c.updated=e.updated;
   if(e.image)c.image=await blobToB64(e.image);
   if(e.audio)c.audio=await blobToB64(e.audio);
+  if(e.media&&e.media.length){
+    c.media=[];
+    for(const m of e.media){if(m.blob)c.media.push({b64:await blobToB64(m.blob),kind:m.kind})}
+  }
   return JSON.stringify(c);
 }
 async function jsonToEntry(j){
   const e=Object.assign({},j);
   if(typeof e.image==='string')e.image=await b64ToBlob(e.image);
   if(typeof e.audio==='string')e.audio=await b64ToBlob(e.audio);
+  if(Array.isArray(e.media)){
+    const out=[];
+    for(const m of e.media){out.push({blob:typeof m.b64==='string'?await b64ToBlob(m.b64):m.blob,kind:m.kind})}
+    e.media=out;
+  }
   return e;
 }
 async function syncNow(silent){
@@ -1485,6 +1554,12 @@ $('ghForget').addEventListener('click',async()=>{
     const img=new Image();
     img.onload=()=>{ctx.drawImage(img,0,0,canvas.clientWidth||canvas.parentElement.clientWidth,canvas.clientHeight||320);hasInk=true};
     img.src=sk;
+  }
+  const md=await loadDraftKey('media');
+  if(Array.isArray(md)&&md.length){
+    pendingMedia=[];
+    for(const m of md){const blob=await b64ToBlob(m.b64);pendingMedia.push({blob,kind:m.kind,url:URL.createObjectURL(blob)})}
+    renderAttachPreviews();
   }
   const vd=await loadDraftKey('voice');
   if(vd&&vd.chunks&&vd.chunks.length){
